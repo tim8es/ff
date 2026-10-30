@@ -5,7 +5,11 @@ public repositories or GitHub Actions artifacts.
 """
 from pathlib import Path
 
-MODEL_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+SUPPORTED_MODEL_SIZES = {
+    "0.6B": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "1.7B": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+}
+MODEL_ID = SUPPORTED_MODEL_SIZES["0.6B"]  # keep previous default
 LANGUAGES = {"ru": "Russian", "en": "English"}
 
 
@@ -31,7 +35,10 @@ def validate_reference(reference, reference_text):
 class Qwen3VoiceCloner:
     """Load Base model once; reuse the same speaker conditioning per scene."""
 
-    def __init__(self, reference, reference_text, *, model=None):
+    def __init__(self, reference, reference_text, *, model=None, model_size="0.6B"):
+        if model_size not in SUPPORTED_MODEL_SIZES:
+            raise ValueError(f"Unsupported Qwen3 model size: {model_size}")
+        self.model_id = SUPPORTED_MODEL_SIZES[model_size]
         self.reference = validate_reference(reference, reference_text)
         self.reference_text = reference_text.strip()
         if model is None:
@@ -40,7 +47,7 @@ class Qwen3VoiceCloner:
             torch.set_num_threads(min(4, torch.get_num_threads()))
             # CPU-compatible fallback: no FlashAttention, CUDA, or paid API.
             model = Qwen3TTSModel.from_pretrained(
-                MODEL_ID, device_map="cpu", dtype=torch.float32)
+                self.model_id, device_map="cpu", dtype=torch.float32)
         self.model = model
         self.prompt = model.create_voice_clone_prompt(
             ref_audio=str(self.reference),
@@ -60,4 +67,4 @@ class Qwen3VoiceCloner:
         )
         if not audio:
             raise RuntimeError("Qwen3 produced no speech")
-        return np.asarray(audio[0], dtype=np.float32).reshape(-1), rate, MODEL_ID
+        return np.asarray(audio[0], dtype=np.float32).reshape(-1), rate, self.model_id
