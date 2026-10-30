@@ -93,11 +93,38 @@ cloning requires a trusted local or private execution environment and
 private storage/transfer. `.gitignore` reduces accidents but does not prevent
 forced commits (`git add -f`), malicious actions, or exposure after committing.
 
-The second approach, Kokoro + RVC voice conversion, requires a trained target
-voice model; KokoClone reports a 30–60 minute training job with a GPU for a
-larger dataset. It is **not** a drop-in zero-shot replacement, so it has not
-been silently enabled or promised. Keep Kokoro for proven existing voices;
-Qwen3 for cloned voices, pending acoustic and identity evaluation.
+## Voice conversion: Kokoro (English) or Piper (Russian) + ChatterboxVC
+
+Unlike Kokoro itself, upstream Resemble **ChatterboxVC** can change the speaker timbre of existing speech from a short target reference without training an RVC model. The same FF voice output format and QA rules apply. The model is optional; no need to install it for ordinary Kokoro or Qwen3.
+
+Install in a *separate, trusted* CPU environment to avoid pinned-library conflicts with Qwen:
+
+```bash
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 torchaudio==2.6.0
+python -m pip install "kokoro==0.9.4" "chatterbox-tts==0.1.7" "piper-tts==1.8.0" soundfile
+```
+
+Use a local 3–30-second authorized reference sample. No transcript is needed for conversion:
+
+```bash
+python -m scripts.tts --provider kokoro --language en \
+  --voice-conversion chatterbox --reference /private/voice.wav \
+  --text-file /private/story-en.txt --output /private/converted-en.wav
+
+python -m scripts.tts --provider piper --language ru \
+  --voice-conversion chatterbox --reference /private/voice.wav \
+  --text-file /private/story-ru.txt --output /private/converted-ru.wav
+```
+
+For a normal FF scene manifest, keep the reference path local and uncommitted:
+
+```json
+{"language":"en","tts":{"provider":"kokoro","voice_conversion":"chatterbox","reference":"/private/voice.wav"},"scenes":["..."]}
+```
+
+**Important:** do not try Kokoro for Russian (the configured Kokoro voice is English-only). Do not stack conversion after `qwen3_clone`: it already clones the target voice directly. Neither technique guarantees likeness or intelligibility; listen before using the results. The voice conversion model is MIT-licensed, but the Piper engine and individual source voices have separate license considerations. The project’s public CI uses a *synthetic* Piper reference and cannot safely ingest or expose a person's real biometric recording.
+
+The conversion smoke is [voice-conversion-smoke.yml](../.github/workflows/voice-conversion-smoke.yml). It has no input field for uploading personal voice samples; do not add such an input.
 
 Sources: https://github.com/QwenLM/Qwen3-TTS ;
 https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base ;
