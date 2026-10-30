@@ -1,0 +1,56 @@
+name: FF - Chatterbox voice conversion (synthetic reference)
+on:
+  push:
+    paths:
+      - "scripts/tts.py"
+      - "scripts/tts_conversion.py"
+      - "scripts/conversion_smoke.py"
+      - ".github/workflows/voice-conversion-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-synthetic-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: System sound dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libsndfile1 espeak-ng
+      - name: Install Piper test reference and common audio support
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26,<3" "soundfile>=0.12,<1" "piper-tts==1.8.0"
+      - name: Install CPU-only Kokoro and ChatterboxVC
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 torchaudio==2.6.0
+          python -m pip install "kokoro==0.9.4" "chatterbox-tts==0.1.7"
+      - name: Convert EN/RU source speech to synthetic target voice
+        run: python -m scripts.conversion_smoke
+      - name: Decode every result
+        run: |
+          for file in out/*.wav; do
+            ffmpeg -v error -xerror -i "$file" -f null -
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "$file"
+          done
+      - name: Upload synthetic samples only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-chatterbox-synthetic-demo
+          path: |
+            out/*.wav
+            out/*.voice.json
+            out/test_only_report.json
+          retention-days: 3
+          if-no-files-found: error
