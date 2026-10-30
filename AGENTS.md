@@ -1,22 +1,34 @@
-# FF: chat-first short video workflow
+# FF — Shorts production (source of truth)
 
-**Trigger:** User requests FF/ff, “Бесполезные факты” channel Shorts, or asks to repeat the prior wombat video workflow. The output contract is a real video file playable in chat, not a static image, prompt, storyboard, or claim of future delivery.
+**Trigger:** In the ChatGPT project FF, requests like «Создай видео», «Следующий ролик», «FF, ролик про…». Default to selecting a topic autonomously. This file is the **only authoritative workflow and style contract**. Do not copy it into the ChatGPT Project instruction or the Skill.
 
-## Run in this chat
+**Deliverable:** a real vertical 9:16 MP4 with **Russian voice narration**, coherent generated imagery, animated motion graphics, infographic, and sound design, returned **in this chat**. Images, storyboards, silent slideshow videos, or a promise to render later do not satisfy the request.
 
-1. **Load spec:** Read this file, `skills/ff-shorts/SKILL.md`, and `examples/wombat.json` from the GitHub repository `tim8es/ff`. Respect the latest committed version. The user should not need to open an external editor or run commands.
-2. **Fact and sources:** Find a surprising, verified fact (at least two credible independent references, preferably primary/scientific). Flag uncertainty. Do not make biological/medical diagrams falsely precise.
-3. **Script:** Write 15–25 seconds, one factual insight, hook within 1.5 seconds, quick explanation and a memorable funny finish. Keep the narration ~35–55 Russian words. Avoid unverifiable jokes presented as facts.
-4. **Shot plan:** 5–8 scenes, each with a unique visual purpose; specify seconds, shot type, motion, typography, and audio cue. Alternate hero imagery, closeups, and clean diagrams rather than making every shot a static infographic.
-5. **Generate visuals:** Use available image/video tools in-chat for cohesive character/scene assets. Request **text-free** artwork; captions and diagrams should be composited deterministically. Generate true moving footage if the relevant video tool is available; otherwise apply keyframed camera motion and animated vector overlays in rendering. Use only licensed/authorized assets.
-6. **Render:** Create a JSON scene timeline compatible with `scripts/render.py` (or a richer video renderer available in the chat). Use FFmpeg and produce an actual MP4 in `/mnt/data` with 9:16 dimensions, H.264/yuv420p. Generate/load speech and music only if available and permissible; never pretend a silent file has narration.
-7. **QA:** Inspect with `ffprobe`: video codec, dimensions, duration, audio. Extract representative frames and check spelling, safe text area, motion pacing, and visual consistency. Verify factual citations. If a render fails, fix and rerender. If blocked by missing tools/assets, disclose it rather than substituting images.
-8. **Deliver:** Link the actual `sandbox:/mnt/data/<file>.mp4` and briefly mention duration, audio status, and limitations. Do not auto-publish.
+## Production loop
 
-## Style contract
+1. **Discover + verify.** Select one surprising, visually demonstrable, harmless fact; cross-check with at least two independent credible sources, preferably primary research. Keep source URLs and uncertainty with the per-video manifest. Reject myths and risky claims.
+2. **Write + direct.** Produce a 15–25-second Russian script (roughly 35–55 words): immediate hook → surprising proof/explanation → witty payoff. Plan 5–8 purposeful shots with timing, focal object, exact screen text, motion, narration and audio cues. Each shot must contribute something new.
+3. **Make assets.** Generate a visually coherent set of **text-free** hero images, supporting close-ups, objects and backgrounds; create additional short moving shots where a video generator is available. At least three shots need distinctive illustrated/filmed subject matter; do not use generic empty cards as substitutes. Exact facts, labels and infographics are composited separately in code. Never rely on AI-generated anatomical diagrams without checking them.
+4. **Narrate + mix.** Generate a pleasant expressive Russian voice (not monotonous), align pauses and visual beats to the recording; add low-level licensed music and restrained SFX when available. **Narration is required for final release.** If voice production is unavailable, disclose that the full deliverable is blocked; offer a silent preview only if the user explicitly requests one.
+5. **Compose + animate.** Create one concise scene manifest with paths/timing/typography/focus/voice cues. Render with the best available chat video tools; use `scripts/render.py` for deterministic overlays and infographic/fallback shots, not as a replacement for generated imagery. Keep text editable and separated from AI images. Export H.264 / yuv420p / AAC MP4 (default 720×1280, 24/30 fps) to `/mnt/data`.
+6. **Inspect + repair.** Run `ffprobe`, verify the presence and level of the spoken audio, inspect representative frames from **every** shot (start, middle, end), and review the completed video for flow. Check text bounds, crops, subject consistency, legibility, scene timing, audio sync and factual accuracy. Fix specific failures and rerender; do at most two targeted repair passes before reporting a blocker rather than delivering a flawed “final”.
+7. **Deliver.** Link the playable `sandbox:/mnt/data/*.mp4` in chat and state duration and audio status. No auto-posting. No paid generation or externally visible publication without permission. Do not change this repository while generating a video unless asked.
 
-Vertical 9:16; clear minimal *kinetic* typography; TGC-inspired editorial/motion graphic energy; one focal object per shot; fluid camera moves and semantic transitions; animated SVG-like infographics; concise text; high contrast; restrained palette (dark navy / white / yellow / cool blue); attention change when a new meaning enters, not constant chaotic cuts. No big brush-type thumbnail headers on every frame. No gratuitous flashing or unreadable speed. Stay recognizably cohesive between different facts.
+## Channel art direction
 
-## Quality gates
+**Brand:** bright, memorable and friendly; premium playful 2D/3D editorial motion, not noisy clickbait. Cohesive across episodes but each fact gets its own expressive subject and fresh scenes.
 
-Fact provenance and caveats; usable hook; every scene contributes new information/visual surprise; narration synchronized with on-screen meaning; clean safe margins for Shorts UI; no watermarks or unauthorized copyrighted footage; deterministic export with ffprobe evidence; usable playback link. Reject fabricated anatomy, broken captions, repeated AI compositions, and any project that is only an image sequence mislabeled as a finished video.
+- **Palette:** primary blue `#2386F8`, deep navy `#101C35`, warm white `#FFFDF5`; highlights yellow `#FFE352` and occasional coral `#FF7966`. Use no more than two accents per scene; prioritize contrast and legibility over saturation.
+- **Typography:** one geometric sans family (e.g. Manrope/Inter, with a Cyrillic-capable fallback), two weights, kinetic emphasis on key words. Copy is short; headings ideally up to two lines. Do not repeat a huge header in every shot. Avoid rough brush fonts and fake AI-generated lettering.
+- **Composition:** one focal subject and one clear text hierarchy per shot. Reserve roughly 8% horizontal margins, 12% at top and 20% at bottom for Shorts UI. Text must fit *within* its allocated safe box; shrink/reflow or move it away from the subject rather than cropping or overlapping. Apply a subtle contrast scrim/plate over busy imagery. Keep diagrams schematic, correct and readable.
+- **Motion:** intentional camera parallax, object transitions, animated diagrams and responsive typography. Introduce new visual meaning about every 1–2 seconds but avoid strobing, constant random zooms, excess noise and rapid flashing. Infographics should explain rather than decorate.
+- **Consistency:** same design tokens, type scale, motion easing, illustration/render treatment and sound palette in one video; retain the same character/model where a character recurs.
+
+## Files and limits
+
+- Read this file on each new FF session from `tim8es/ff`; load only files relevant to the run. Do **not** read every file in the repository by default.
+- `skills/ff-shorts/SKILL.md` is a discovery pointer, not duplicate instructions.
+- `examples/wombat.json` is a structural/demo example, **not** final visual quality.
+- `scripts/render.py` is a reusable compositor, **not** an image/video generator or TTS service.
+- Store per-video script, source list, scene manifest and asset paths together for reproducibility. Do not commit generated footage/assets by default.
+- A ChatGPT Project router can request these steps but cannot make unavailable video/TTS tools appear. If a tool, budget or render is blocked, state the exact limitation; **never** present an image sequence as the requested finished video.
