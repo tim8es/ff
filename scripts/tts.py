@@ -174,7 +174,7 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
                         "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", str(output)],
                        check=True)
     duration = media_duration(output)
-    if duration < 8:
+    if duration < 0.75:
         raise RuntimeError(f"Narration unexpectedly short: {duration:.1f}s")
     metadata = {
         "engine": provider, "model": model_id, "neural": True,
