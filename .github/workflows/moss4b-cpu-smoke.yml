@@ -1,0 +1,46 @@
+name: FF - MOSS 4B CPU feasibility (public sample only)
+on:
+  push:
+    branches: [experiment/moss4b-cpu-feasibility]
+    paths:
+      - ".github/workflows/moss4b-cpu-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      PYTORCH_CUDA_ALLOC_CONF: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU audio dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libsndfile1
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
+          python -m pip install "transformers==5.0.0" "accelerate>=1.0" "soundfile>=0.12" "torchcodec" "huggingface_hub" "sentencepiece"
+      - name: Show available CPU runner memory and storage
+        run: |
+          free -h
+          df -h / /tmp
+          python -c 'import torch,transformers;print("torch",torch.__version__,"transformers",transformers.__version__)'
+      - name: Try 4B bilingual TTS with public generic voice
+        run: python -u -m scripts.moss4b_cpu_smoke
+      - name: Upload demonstrated speech only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-moss4b-public-smoke
+          path: out/*.wav
+          retention-days: 3
+          if-no-files-found: error
