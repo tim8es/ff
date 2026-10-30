@@ -145,7 +145,7 @@ def speech(text, provider, language, voice, target, *, cloner=None, converter=No
 
 
 def generate(text, output, *, provider, language="en", voice=None, durations=None,
-             reference=None, reference_text=None, voice_conversion=None):
+             reference=None, reference_text=None, voice_conversion=None, model_size=None):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
@@ -159,7 +159,9 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         if selected != "reference":
             raise ValueError("qwen3_clone uses a voice reference, not a preset name")
         from scripts.tts_qwen import Qwen3VoiceCloner
-        cloner = Qwen3VoiceCloner(reference, reference_text)
+        cloner = Qwen3VoiceCloner(reference, reference_text, model_size=model_size or "0.6B")
+    elif model_size is not None:
+        raise ValueError("Model size selection is only supported by qwen3_clone")
     elif voice_conversion == "chatterbox":
         if provider not in ("kokoro", "piper"):
             raise ValueError("Chatterbox conversion supports Kokoro EN or Piper RU")
@@ -227,6 +229,8 @@ def main():
     p.add_argument("--provider", choices=tuple(BACKENDS))
     p.add_argument("--language", choices=("en", "ru"))
     p.add_argument("--voice")
+    p.add_argument("--model-size", choices=("0.6B", "1.7B"),
+                   help="Qwen3 Base model size; only for qwen3_clone")
     p.add_argument("--voice-conversion", choices=("chatterbox",))
     p.add_argument("--reference", type=Path, help="Private local reference recording (cloning only)")
     p.add_argument("--reference-text-file", type=Path,
@@ -239,6 +243,7 @@ def main():
         provider = args.provider or cfg.get("provider", "edge")
         voice = args.voice or cfg.get("voice")
         voice_conversion = args.voice_conversion or cfg.get("voice_conversion")
+        model_size = args.model_size or cfg.get("model_size")
         language = args.language or manifest.get("language", "ru")
         lines = [scene["narration"] for scene in manifest["scenes"]]
         duration = [float(scene["duration"]) for scene in manifest["scenes"]]
@@ -257,7 +262,7 @@ def main():
         result = generate(lines, args.output, provider=provider, language=language,
                           voice=voice, durations=duration,
                           reference=reference, reference_text=reference_text,
-                          voice_conversion=voice_conversion)
+                          voice_conversion=voice_conversion, model_size=model_size)
     else:
         if not args.provider:
             p.error("--provider required when using --text-file")
@@ -267,7 +272,8 @@ def main():
                           provider=args.provider, language=args.language or "en",
                           voice=args.voice, reference=args.reference,
                           reference_text=reference_text,
-                          voice_conversion=args.voice_conversion)
+                          voice_conversion=args.voice_conversion,
+                          model_size=args.model_size)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
