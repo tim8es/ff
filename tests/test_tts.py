@@ -10,13 +10,66 @@ from scripts import tts
 
 class ProviderTests(unittest.TestCase):
     def test_registry_and_languages(self):
-        self.assertEqual(set(tts.BACKENDS), {"silero", "kokoro", "piper", "edge"})
+        self.assertEqual(set(tts.BACKENDS), {"silero", "kokoro", "piper", "edge", "qwen3_clone"})
         self.assertEqual(tts.resolve_voice("silero", "en"), "en_0")
         self.assertEqual(tts.resolve_voice("kokoro", "en"), "af_heart")
+        self.assertEqual(tts.resolve_voice("qwen3_clone", "ru"), "reference")
+        self.assertEqual(tts.resolve_voice("qwen3_clone", "en"), "reference")
         with self.assertRaisesRegex(ValueError, "does not support"):
             tts.resolve_voice("kokoro", "ru")
         with self.assertRaisesRegex(ValueError, "Unknown provider"):
             tts.resolve_voice("invented", "en")
+
+    def test_qwen_ref_required_without_loading_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "reference"):
+                tts.generate("Hello.", Path(directory) / "voice.wav",
+                             provider="qwen3_clone", language="en")
+            with self.assertRaisesRegex(ValueError, "only valid"):
+                tts.generate("Hello.", Path(directory) / "voice.wav",
+                             provider="kokoro", language="en",
+                             reference=Path(directory) / "recording.wav")
+            with self.assertRaisesRegex(ValueError, "preset"):
+                tts.generate("Hello.", Path(directory) / "voice.wav",
+                             provider="qwen3_clone", language="ru", voice="any")
+
+    def test_qwen_mock_clones_both_languages_without_leaking_reference(self):
+        import numpy as np
+        import soundfile as sf
+        from scripts.tts_qwen import Qwen3VoiceCloner
+
+        class FakeModel:
+            def __init__(self):
+                self.calls = []
+            def create_voice_clone_prompt(self, **kwargs):
+                self.calls.append(("prompt", kwargs))
+                return ["private-prompt"]
+            def generate_voice_clone(self, **kwargs):
+                self.calls.append(("generate", kwargs))
+                time = np.arange(24000 * 10, dtype=np.float32) / 24000
+                return [0.15 * np.sin(2 * np.pi * 300 * time)], 24000
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            private_reference = folder / "secret-voice.wav"
+            sf.write(private_reference, np.zeros(24000 * 4), 24000)
+            fake = FakeModel()
+            cloner = Qwen3VoiceCloner(private_reference, "Private words spoken.", model=fake)
+            for lang in ("ru", "en"):
+                with patch("scripts.tts_qwen.Qwen3VoiceCloner", return_value=cloner):
+                    out = folder / (lang + ".wav")
+                    receipt = tts.generate("This is the new story.", out,
+                                           provider="qwen3_clone", language=lang,
+                                           reference=private_reference,
+                                           reference_text="Private words spoken.")
+                self.assertTrue(out.is_file())
+                self.assertTrue(receipt["voice_cloned"])
+                self.assertNotIn(str(private_reference), str(receipt))
+                self.assertNotIn("Private words spoken.", str(receipt))
+                self.assertEqual(receipt["voice"], "reference")
+            self.assertEqual(len([x for x in fake.calls if x[0] == "prompt"]), 1)
+            self.assertEqual([x[1]["language"] for x in fake.calls if x[0] == "generate"],
+                             ["Russian", "English"])
 
     def test_speech_split(self):
         self.assertEqual(tts.split_sentences("First. Second? Third!"),
