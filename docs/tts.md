@@ -93,6 +93,8 @@ cloning requires a trusted local or private execution environment and
 private storage/transfer. `.gitignore` reduces accidents but does not prevent
 forced commits (`git add -f`), malicious actions, or exposure after committing.
 
+To run the comparison on **FF GitHub Actions**, including the safe encrypted-personal-voice workflow, see [GitHub CPU model comparison](qwen-actions.md). Personal audio and generated personal voice must not be uploaded as public WAV artifacts.
+
 ### Compare Base 0.6B against 1.7B on one authorized sample
 
 The default model is still `0.6B`. Model size can be selected **without editing source code**:
