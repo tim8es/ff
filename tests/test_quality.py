@@ -24,6 +24,8 @@ class QualityGateTests(unittest.TestCase):
                     "narration": f"Проверяемый текст сцены {i}.",
                     "onscreen_text": f"СЦЕНА {i}",
                     "visual_intent": "Показать наблюдаемый факт, а не украшение.",
+                    "motion_cue": "Анимировать измерение, обсуждаемое голосом.",
+                    "visual_asset": f"asset_{i}.png",
                 } for i in range(5)
             ],
         }
