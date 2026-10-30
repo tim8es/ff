@@ -1,0 +1,81 @@
+name: FF - compare three local TTS engines
+on:
+  push:
+    paths:
+      - "scripts/tts.py"
+      - "scripts/requirements.txt"
+      - "examples/tts_comparison_story.txt"
+      - ".github/workflows/tts-comparison.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render-voices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [silero, kokoro, piper]
+    env:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install FFmpeg and phoneme backend
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng libsndfile1
+      - name: Install common audio I/O dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26,<3" "soundfile>=0.12,<1"
+      - name: Install lightweight Piper
+        if: matrix.provider == 'piper'
+        run: python -m pip install "piper-tts==1.8.0"
+      - name: Install CPU PyTorch
+        if: matrix.provider == 'silero' || matrix.provider == 'kokoro'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchaudio==2.5.1
+      - name: Install Silero runtime
+        if: matrix.provider == 'silero'
+        run: python -m pip install "omegaconf>=2.3,<3"
+      - name: Install Kokoro runtime
+        if: matrix.provider == 'kokoro'
+        run: python -m pip install "kokoro==0.9.4"
+      - name: Synthesize the same complete story
+        run: |
+          mkdir -p out
+          python -m scripts.tts --provider "${{ matrix.provider }}" --language en --text-file examples/tts_comparison_story.txt --output "out/${{ matrix.provider }}.wav"
+      - name: Inspect audio and print comparison facts
+        if: always()
+        run: |
+          if test -f "out/${{ matrix.provider }}.wav"; then
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "out/${{ matrix.provider }}.wav"
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          name = "${{ matrix.provider }}"
+          file = Path("out") / (name + ".voice.json")
+          if file.exists():
+              data = json.loads(file.read_text())
+              print("ENGINE", data["engine"], "DURATION", data["duration"])
+              print("TEXT_SHA256", data["text_sha256"])
+              print("MODEL_LICENSE", data["license_note"])
+          PY
+          fi
+      - name: Save WAV and metadata even when a synthesis step fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tts-comparison-${{ matrix.provider }}
+          path: |
+            out/*.wav
+            out/*.voice.json
+            examples/tts_comparison_story.txt
+          retention-days: 7
+          if-no-files-found: warn
