@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -17,12 +18,14 @@ VOICES = {
     "kokoro": {"en": "af_heart"},
     "piper": {"en": "en_US-lessac-medium", "ru": "ru_RU-irina-medium"},
     "edge": {"en": "en-US-GuyNeural", "ru": "ru-RU-DmitryNeural"},
+    "qwen_clone": {"en": "reference", "ru": "reference"},
 }
 LICENSES = {
     "silero": "CC BY-NC 4.0: noncommercial only unless separately licensed",
     "kokoro": "Apache-2.0",
     "piper": "GPL-3.0 engine; voice/model training data license varies",
     "edge": "Microsoft online speech service terms",
+    "qwen_clone": "Apache-2.0 model weights; respect speaker consent",
 }
 
 
@@ -116,30 +119,56 @@ def _edge(text, voice, language):
 BACKENDS = {"silero": _silero, "kokoro": _kokoro, "piper": _piper, "edge": _edge}
 
 
-def speech(text, provider, language, voice, target):
+def speech(text, provider, language, voice, target, *,
+           reference_audio=None, reference_text=None, voice_conversion=None):
     import numpy as np
     import soundfile as sf
-    samples, rate, model_id = BACKENDS[provider](text, voice, language)
+    if provider == "qwen_clone":
+        from scripts.voice_clone import qwen_clone
+        samples, rate, model_id = qwen_clone(
+            text, language, reference_audio, reference_text)
+    else:
+        samples, rate, model_id = BACKENDS[provider](text, voice, language)
     samples = np.asarray(samples, dtype=np.float32).reshape(-1)
     if rate < 16000 or samples.size < int(rate):
         raise RuntimeError("Audio unexpectedly short")
     if not np.isfinite(samples).all() or np.max(np.abs(samples)) < .001:
         raise RuntimeError("Invalid/silent model output")
     sf.write(str(target), samples, rate, subtype="PCM_16")
+    if voice_conversion == "chatterbox":
+        from scripts.voice_clone import chatterbox_convert
+        target = Path(target)
+        converted = target.with_name(target.stem + "_converted.wav")
+        try:
+            chatterbox_convert(target, reference_audio, converted)
+            converted.replace(target)
+        finally:
+            converted.unlink(missing_ok=True)
     return model_id
 
 
-def generate(text, output, *, provider, language="en", voice=None, durations=None):
+def generate(text, output, *, provider, language="en", voice=None, durations=None,
+             reference_audio=None, reference_text=None, voice_conversion=None):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
+    if voice_conversion not in (None, "chatterbox"):
+        raise ValueError("Unsupported voice conversion: " + str(voice_conversion))
+    if provider == "qwen_clone" or voice_conversion:
+        from scripts.voice_clone import validate_reference
+        validate_reference(
+            reference_audio, transcript=reference_text,
+            require_transcript=(provider == "qwen_clone"))
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ff_tts_") as directory:
         tmp = Path(directory)
         if durations is None:
             raw = tmp / "raw.wav"
-            model_id = speech(text, provider, language, selected, raw)
+            model_id = speech(
+                text, provider, language, selected, raw,
+                reference_audio=reference_audio, reference_text=reference_text,
+                voice_conversion=voice_conversion)
             transcript = text.strip()
         else:
             if len(durations) != len(text):
@@ -147,7 +176,10 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
             fragments = []
             for i, utterance in enumerate(text):
                 target = tmp / f"segment_{i}.wav"
-                speech(utterance, provider, language, selected, target)
+                speech(
+                    utterance, provider, language, selected, target,
+                    reference_audio=reference_audio, reference_text=reference_text,
+                    voice_conversion=voice_conversion)
                 fragments.append(target)
             raw = tmp / "aligned.wav"
             compose_timeline(fragments, durations, raw)
@@ -164,6 +196,8 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         "engine": provider, "model": model_id, "neural": True,
         "voice": selected, "language": language,
         "license_note": LICENSES[provider],
+        "voice_conversion": voice_conversion,
+        "cloned_from_reference": provider == "qwen_clone" or bool(voice_conversion),
         "duration": round(duration, 3),
         "text_sha256": hashlib.sha256(transcript.encode("utf8")).hexdigest(),
         "audio_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
@@ -182,27 +216,40 @@ def main():
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument("--text-file", type=Path)
     source.add_argument("--manifest", type=Path)
-    p.add_argument("--provider", choices=tuple(BACKENDS))
+    p.add_argument("--provider", choices=tuple(VOICES))
     p.add_argument("--language", choices=("en", "ru"))
     p.add_argument("--voice")
+    p.add_argument("--voice-conversion", choices=("chatterbox",))
+    p.add_argument("--reference-audio", type=Path)
+    p.add_argument("--reference-text-file", type=Path,
+                   help="Exact transcript of the reference clip, required for Qwen")
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
+    reference_audio = args.reference_audio or os.environ.get("FF_VOICE_REFERENCE")
+    reference_text = (args.reference_text_file.read_text(encoding="utf8")
+                      if args.reference_text_file
+                      else os.environ.get("FF_VOICE_REFERENCE_TEXT"))
     if args.manifest:
         manifest = json.loads(args.manifest.read_text(encoding="utf8"))
         cfg = manifest.get("tts", {})
         provider = args.provider or cfg.get("provider", "edge")
         voice = args.voice or cfg.get("voice")
+        voice_conversion = args.voice_conversion or cfg.get("voice_conversion")
         language = args.language or manifest.get("language", "ru")
         lines = [scene["narration"] for scene in manifest["scenes"]]
         duration = [float(scene["duration"]) for scene in manifest["scenes"]]
         result = generate(lines, args.output, provider=provider, language=language,
-                          voice=voice, durations=duration)
+                          voice=voice, durations=duration,
+                          reference_audio=reference_audio, reference_text=reference_text,
+                          voice_conversion=voice_conversion)
     else:
         if not args.provider:
             p.error("--provider required when using --text-file")
         result = generate(args.text_file.read_text(encoding="utf8"), args.output,
                           provider=args.provider, language=args.language or "en",
-                          voice=args.voice)
+                          voice=args.voice, reference_audio=reference_audio,
+                          reference_text=reference_text,
+                          voice_conversion=args.voice_conversion)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
