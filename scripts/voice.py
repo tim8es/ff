@@ -118,13 +118,48 @@ async def synthesize(manifest_path, output, voice=None, rate="+0%"):
     return receipt_path
 
 
+
+async def preflight():
+    """Quick live voice test before committing to a script language."""
+    try:
+        import edge_tts
+    except ImportError as exc:
+        raise RuntimeError("edge-tts is not installed") from exc
+    candidates = {
+        "ru-RU-DmitryNeural": ("ru", "Проверка естественной речи."),
+        "ru-RU-SvetlanaNeural": ("ru", "Проверка естественной речи."),
+        "en-US-GuyNeural": ("en", "Checking a clear speaking voice."),
+    }
+    results = {}
+    with tempfile.TemporaryDirectory(prefix="ff_probe_") as folder:
+        for name, (language, sample) in candidates.items():
+            output = Path(folder) / (name + ".mp3")
+            try:
+                await edge_tts.Communicate(sample, voice=name).save(str(output))
+                ready = output.is_file() and output.stat().st_size > 1000
+            except Exception:
+                ready = False
+            results[name] = {"language": language, "available": ready}
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--voice", help="Edge voice ID (e.g. ru-RU-DmitryNeural)")
+    parser.add_argument("manifest", type=Path, nargs="?")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--voice", help="Edge voice ID (e.g. ru-RU-SvetlanaNeural)")
     parser.add_argument("--rate", default="+0%")
+    parser.add_argument("--probe", action="store_true",
+                        help="Check live Russian/English voices before writing an episode")
     args = parser.parse_args()
+    if args.probe:
+        status = asyncio.run(preflight())
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+        if not any(item["available"] for item in status.values()):
+            raise SystemExit(2)
+        return
+    if not args.manifest or not args.output:
+        parser.error("manifest and --output are required unless --probe")
     print(asyncio.run(synthesize(args.manifest, args.output, args.voice, args.rate)))
 
 
