@@ -97,5 +97,69 @@ class ProviderTests(unittest.TestCase):
             self.assertIn("noncommercial", receipt["license_note"])
 
 
+class ConverterTests(unittest.TestCase):
+    def test_converter_requires_authorized_reference(self):
+        from scripts.tts_conversion import validate_reference
+        with self.assertRaisesRegex(ValueError, "reference"):
+            validate_reference(None)
+        import numpy as np
+        import soundfile as sf
+        with tempfile.TemporaryDirectory() as folder:
+            short = Path(folder) / "short.wav"
+            sf.write(short, np.ones(24000, dtype="float32") * .1, 24000)
+            with self.assertRaisesRegex(ValueError, "3–30 seconds"):
+                validate_reference(short)
+            with self.assertRaisesRegex(ValueError, "reference"):
+                tts.generate("Hello.", Path(folder) / "no.wav",
+                             provider="kokoro", voice_conversion="chatterbox")
+
+    def test_conversion_attaches_to_existing_backends_and_receipts(self):
+        import shutil
+        import numpy as np
+        import soundfile as sf
+        class FakeConverter:
+            def __init__(self, reference):
+                self.reference = reference
+            def convert(self, source, output):
+                shutil.copyfile(source, output)
+                return output
+        def fake_tts(text, voice, lang):
+            rate = 24000
+            t = np.arange(rate * 10, dtype=np.float32) / rate
+            return (0.1 * np.sin(2 * np.pi * 400 * t), rate, "fixture")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "private_authorized.wav"
+            sf.write(path, np.zeros(24000 * 6), 24000)
+            for provider, lang in (("kokoro", "en"), ("piper", "ru")):
+                output = Path(folder) / (provider + ".wav")
+                with patch.dict(tts.BACKENDS, {provider: fake_tts}):
+                    with patch("scripts.tts_conversion.ChatterboxVoiceConverter",
+                               FakeConverter):
+                        info = tts.generate("Test synthesis.", output,
+                                            provider=provider, language=lang,
+                                            reference=path,
+                                            voice_conversion="chatterbox")
+                self.assertTrue(output.exists())
+                self.assertTrue(info["voice_cloned"])
+                self.assertEqual(info["voice_conversion"], "chatterbox")
+                self.assertIn("MIT", info["conversion_license_note"])
+                self.assertNotIn(str(path), str(info))
+                self.assertEqual(info["audio_sha256"],
+                                 hashlib.sha256(output.read_bytes()).hexdigest())
+
+    def test_converter_rejects_unsupported_combination(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with self.assertRaisesRegex(ValueError, "do not stack"):
+                tts.generate("Hello.", root / "out.wav", provider="qwen3_clone",
+                             voice_conversion="chatterbox")
+            with self.assertRaisesRegex(ValueError, "Kokoro EN or Piper RU"):
+                tts.generate("Hello.", root / "out.wav", provider="edge",
+                             voice_conversion="chatterbox")
+            with self.assertRaisesRegex(ValueError, "Unknown voice conversion"):
+                tts.generate("Hello.", root / "out.wav", provider="kokoro",
+                             voice_conversion="nonexistent")
+
+
 if __name__ == "__main__":
     unittest.main()
