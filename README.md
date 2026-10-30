@@ -32,6 +32,8 @@ Required `review.json` booleans: `speech_understandable`, `facts_verified`, `mot
 
 The example uses an English voice, so set `language` to `en` and write **all** narration/captions in English. For Russian use a working `ru-RU-...Neural` voice only if the live probe confirms it. On 30 Oct 2026 the hosted smoke test found both Russian Edge voices unavailable but the English one working. Edge TTS is unofficial and online; it needs network access, may change without notice, and must never silently fall back to eSpeak. Equivalent independently evaluated neural voices can be used with a matching provenance receipt. GitHub does not automatically launch video production from a chat message.
 
+For Qwen3 0.6B vs 1.7B benchmarks on the **FF GitHub Actions** runner, see [Actions model comparison and encrypted personal voice setup](docs/qwen-actions.md). Do not upload plaintext personal voice audio into this public repository or its build artifacts.
+
 ## Local fallback and tests
 
 Requires Python 3.11+, Pillow, FFmpeg / FFprobe:
