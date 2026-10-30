@@ -1,6 +1,6 @@
 # FF: interchangeable neural speech providers
 
-A single CLI, `scripts/tts.py`, wraps existing upstream Silero, Kokoro, Piper and Edge TTS engines. The video compositor and QA keep the same WAV/receipt interface; changing providers does not require changing scene rendering code.
+A single CLI, `scripts/tts.py`, wraps existing upstream Silero, Kokoro, Piper and Edge TTS engines, with optional Qwen3 reference cloning and Chatterbox voice conversion. The video compositor and QA keep the same WAV/receipt interface; changing providers does not require changing scene rendering code.
 
 ## Select a provider
 
@@ -14,9 +14,11 @@ Render with `python -m scripts.tts --manifest episode.json --output voice.wav`. 
 
 The CLI generates **PCM WAV 48 kHz, mono** and a matching `voice.voice.json` receipt with engine, model, voice, language, license note, audio hash and transcript hash. For scene-based input the receipt also has `script_sha256` and aligns clips by scene duration with existing `scripts.voice.compose_timeline`. Impossible alignment raises an error instead of clipping speech. `scripts/qa.py` accepts the metadata contract.
 
+For **voice cloning** (English and Russian), use the additional [voice cloning setup](voice-cloning.md), which keeps personal voice data outside the public repository. The base provider can optionally add a `voice_conversion` stage. `qwen_clone` is a selectable provider, and `chatterbox` is an optional postprocessor, not an alternative TTS engine.
+
 ## One-minute comparison
 
-[Workflow](../.github/workflows/tts-comparison.yml) runs a 130-word **identical English story** in three independent GitHub-hosted CPU jobs. Each job installs only the needed backend, downloads weights, writes its own WAV and metadata, and uploads a GitHub Actions artifact (retained for 7 days). No GPU, paid provider or tokens are needed. Run it manually in the Actions UI, or push changes to its tracked files. The workflows use `actions/upload-artifact@v4`.
+[Workflow](../.github/workflows/tts-comparison.yml) runs a 161-word **identical English story** in three independent GitHub-hosted CPU jobs. Each job installs only the needed backend, downloads weights, writes its own WAV and metadata, and uploads a GitHub Actions artifact (retained for 7 days). No GPU, paid provider or tokens are needed. Run it manually in the Actions UI, or push changes to its tracked files. The workflows use `actions/upload-artifact@v4`.
 
 Model mappings:
 
@@ -26,6 +28,7 @@ Model mappings:
 | Kokoro-82M | `af_heart` | Not supported by this English model | PyTorch CPU |
 | Piper | `en_US-lessac-medium` | `ru_RU-irina-medium` | ONNX CPU |
 | Edge | `en-US-GuyNeural` | `ru-RU-DmitryNeural` (check availability) | Online |
+| Qwen3 0.6B Base (clone) | reference | reference | PyTorch CPU, requires a private voice reference |
 
 **License warning:** Silero's standard models are CC BY-NC 4.0, so do not use a generated Silero track in a monetized video without an appropriate license. Kokoro weights are Apache 2.0. Piper code is GPL-3.0 and *individual voice models/datasets may have distinct licenses*; check the precise model before commercial use. Edge is an unofficial access path subject to external service availability and terms. Tests and outputs are not auto-published.
 
