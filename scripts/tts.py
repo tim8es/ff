@@ -17,12 +17,14 @@ VOICES = {
     "kokoro": {"en": "af_heart"},
     "piper": {"en": "en_US-lessac-medium", "ru": "ru_RU-irina-medium"},
     "edge": {"en": "en-US-GuyNeural", "ru": "ru-RU-DmitryNeural"},
+    "qwen3_clone": {"en": "reference", "ru": "reference"},
 }
 LICENSES = {
     "silero": "CC BY-NC 4.0: noncommercial only unless separately licensed",
     "kokoro": "Apache-2.0",
     "piper": "GPL-3.0 engine; voice/model training data license varies",
     "edge": "Microsoft online speech service terms",
+    "qwen3_clone": "Apache-2.0 model weights; use only recordings with consent",
 }
 
 
@@ -113,13 +115,18 @@ def _edge(text, voice, language):
     return audio, rate, "edge-tts"
 
 
-BACKENDS = {"silero": _silero, "kokoro": _kokoro, "piper": _piper, "edge": _edge}
+BACKENDS = {"silero": _silero, "kokoro": _kokoro, "piper": _piper, "edge": _edge, "qwen3_clone": None}
 
 
-def speech(text, provider, language, voice, target):
+def speech(text, provider, language, voice, target, *, cloner=None):
     import numpy as np
     import soundfile as sf
-    samples, rate, model_id = BACKENDS[provider](text, voice, language)
+    if provider == "qwen3_clone":
+        if cloner is None:
+            raise ValueError("qwen3_clone requires a reference and initialized model")
+        samples, rate, model_id = cloner.synthesize(text, language)
+    else:
+        samples, rate, model_id = BACKENDS[provider](text, voice, language)
     samples = np.asarray(samples, dtype=np.float32).reshape(-1)
     if rate < 16000 or samples.size < int(rate):
         raise RuntimeError("Audio unexpectedly short")
@@ -129,17 +136,26 @@ def speech(text, provider, language, voice, target):
     return model_id
 
 
-def generate(text, output, *, provider, language="en", voice=None, durations=None):
+def generate(text, output, *, provider, language="en", voice=None, durations=None,
+             reference=None, reference_text=None):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
+    cloner = None
+    if provider == "qwen3_clone":
+        if selected != "reference":
+            raise ValueError("qwen3_clone uses a voice reference, not a preset name")
+        from scripts.tts_qwen import Qwen3VoiceCloner
+        cloner = Qwen3VoiceCloner(reference, reference_text)
+    elif reference is not None or reference_text is not None:
+        raise ValueError("Reference audio is only valid for a cloning provider")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ff_tts_") as directory:
         tmp = Path(directory)
         if durations is None:
             raw = tmp / "raw.wav"
-            model_id = speech(text, provider, language, selected, raw)
+            model_id = speech(text, provider, language, selected, raw, cloner=cloner)
             transcript = text.strip()
         else:
             if len(durations) != len(text):
@@ -147,7 +163,7 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
             fragments = []
             for i, utterance in enumerate(text):
                 target = tmp / f"segment_{i}.wav"
-                speech(utterance, provider, language, selected, target)
+                speech(utterance, provider, language, selected, target, cloner=cloner)
                 fragments.append(target)
             raw = tmp / "aligned.wav"
             compose_timeline(fragments, durations, raw)
@@ -158,7 +174,7 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
                         "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", str(output)],
                        check=True)
     duration = media_duration(output)
-    if duration < 8:
+    if duration < 0.75:
         raise RuntimeError(f"Narration unexpectedly short: {duration:.1f}s")
     metadata = {
         "engine": provider, "model": model_id, "neural": True,
@@ -168,6 +184,7 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         "text_sha256": hashlib.sha256(transcript.encode("utf8")).hexdigest(),
         "audio_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
         "status": "generated_not_auditioned",
+        "voice_cloned": provider == "qwen3_clone",
     }
     if durations is not None:
         metadata["scene_count"] = len(text)
@@ -185,6 +202,9 @@ def main():
     p.add_argument("--provider", choices=tuple(BACKENDS))
     p.add_argument("--language", choices=("en", "ru"))
     p.add_argument("--voice")
+    p.add_argument("--reference", type=Path, help="Private local reference recording (cloning only)")
+    p.add_argument("--reference-text-file", type=Path,
+                   help="Exact transcript of the reference recording (cloning only)")
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
     if args.manifest:
@@ -195,14 +215,30 @@ def main():
         language = args.language or manifest.get("language", "ru")
         lines = [scene["narration"] for scene in manifest["scenes"]]
         duration = [float(scene["duration"]) for scene in manifest["scenes"]]
+        reference = args.reference or cfg.get("reference")
+        if reference:
+            reference = Path(reference).expanduser()
+            if not reference.is_absolute():
+                reference = args.manifest.parent / reference
+        transcript_file = args.reference_text_file or cfg.get("reference_text_file")
+        if transcript_file:
+            transcript_file = Path(transcript_file).expanduser()
+            if not transcript_file.is_absolute():
+                transcript_file = args.manifest.parent / transcript_file
+        reference_text = (transcript_file.read_text(encoding="utf8")
+                          if transcript_file else None)
         result = generate(lines, args.output, provider=provider, language=language,
-                          voice=voice, durations=duration)
+                          voice=voice, durations=duration,
+                          reference=reference, reference_text=reference_text)
     else:
         if not args.provider:
             p.error("--provider required when using --text-file")
+        reference_text = (args.reference_text_file.read_text(encoding="utf8")
+                          if args.reference_text_file else None)
         result = generate(args.text_file.read_text(encoding="utf8"), args.output,
                           provider=args.provider, language=args.language or "en",
-                          voice=args.voice)
+                          voice=args.voice, reference=args.reference,
+                          reference_text=reference_text)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

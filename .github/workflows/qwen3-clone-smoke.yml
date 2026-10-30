@@ -1,0 +1,62 @@
+name: FF - Qwen3 public demo clone smoke
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/tts_qwen.py"
+      - "scripts/tts.py"
+      - ".github/workflows/qwen3-clone-smoke.yml"
+permissions:
+  contents: read
+jobs:
+  public-demo-only:
+    # NEVER supply a private voice file to this public-repository workflow.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [en, ru]
+    env:
+      OMP_NUM_THREADS: "4"
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU audio dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libsndfile1
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
+          python -m pip install qwen-tts soundfile numpy
+      - name: Download only the public reference distributed by Qwen
+        run: |
+          mkdir -p demo out
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlretrieve
+          urlretrieve("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav", "demo/public_reference.wav")
+          Path("demo/ref.txt").write_text(
+              "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.",
+              encoding="utf8")
+          Path("demo/en.txt").write_text("Some sharks lived long before the first forests.", encoding="utf8")
+          Path("demo/ru.txt").write_text("Предки акул появились намного раньше первых лесов.", encoding="utf8")
+          PY
+      - name: Synthesize cloned speech in English and Russian
+        run: |
+          python -m scripts.tts --provider qwen3_clone --language "${{ matrix.lang }}" --reference demo/public_reference.wav --reference-text-file demo/ref.txt --text-file "demo/${{ matrix.lang }}.txt" --output "out/qwen3_${{ matrix.lang }}.wav"
+          ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "out/qwen3_${{ matrix.lang }}.wav"
+      - name: Upload ONLY synthesized demo speech, never reference audio
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen3-public-demo-${{ matrix.lang }}
+          path: |
+            out/*.wav
+            out/*.voice.json
+          retention-days: 1
+          if-no-files-found: error
