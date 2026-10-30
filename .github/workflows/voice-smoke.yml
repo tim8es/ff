@@ -1,0 +1,32 @@
+name: FF neural narration smoke check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/voice-smoke.yml'
+jobs:
+  neural-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install -r scripts/requirements.txt
+      - name: Prepare a disposable Russian phrase
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('/tmp/voice-test.json').write_text(json.dumps({
+            'language': 'ru',
+            'scenes': [{'duration': 6.0, 'narration': 'Проверка речи. Этот звук должен быть понятным.'}]
+          }, ensure_ascii=False), encoding='utf-8')
+          PY
+      - name: Test real Edge TTS connectivity
+        run: |
+          python -m scripts.voice /tmp/voice-test.json --output /tmp/voice-test.wav
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 /tmp/voice-test.wav
+          test -s /tmp/voice-test.voice.json
