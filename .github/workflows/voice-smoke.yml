@@ -1,0 +1,51 @@
+name: FF neural narration smoke check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/voice-smoke.yml'
+jobs:
+  neural-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install -r scripts/requirements.txt
+      - name: Prepare a disposable Russian phrase
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('/tmp/voice-test-ru.json').write_text(json.dumps({
+            'language': 'ru',
+            'scenes': [{'duration': 6.0, 'narration': 'Проверка речи. Этот звук должен быть понятным.'}]
+          }, ensure_ascii=False), encoding='utf-8')
+          Path('/tmp/voice-test-en.json').write_text(json.dumps({
+            'language': 'en',
+            'scenes': [{'duration': 6.0, 'narration': 'This is a short test of clear natural English speech.'}]
+          }, ensure_ascii=False), encoding='utf-8')
+          PY
+      - name: Probe both Russian neural voices and the English voice
+        run: python -m scripts.voice --probe
+      - name: Test Russian and English Edge TTS independently
+        run: |
+          set +e
+          python -m scripts.voice /tmp/voice-test-ru.json --output /tmp/voice-test-ru.wav
+          RU=$?
+          python -m scripts.voice /tmp/voice-test-en.json --output /tmp/voice-test-en.wav
+          EN=$?
+          set -e
+          echo "Russian exit status: $RU; English exit status: $EN"
+          if [ "$RU" -eq 0 ]; then
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 /tmp/voice-test-ru.wav
+            test -s /tmp/voice-test-ru.voice.json
+          fi
+          if [ "$EN" -eq 0 ]; then
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 /tmp/voice-test-en.wav
+            test -s /tmp/voice-test-en.voice.json
+          fi
+          test "$RU" -eq 0 -o "$EN" -eq 0

@@ -88,6 +88,58 @@ def center_text(draw, text, y, width, max_size, color, max_width=0.86):
     return y
 
 
+
+def draw_text_box(draw, text, box, max_size, color, *, align="center", min_size=18):
+    """Fit text within an explicit bounding box, or fail rather than clip.
+
+    Returns the painted bounding rectangle for automated regression tests.
+    The caller owns the box; never hide overflow with a later overlay.
+    """
+    x0, y0, x1, y1 = map(int, box)
+    if x0 >= x1 or y0 >= y1 or not text:
+        raise ValueError("invalid text box/text")
+    tokens = text.upper().split()
+    for size in range(max_size, min_size - 1, -1):
+        face = font(size)
+        lines = []
+        line = ""
+        for token in tokens:
+            test = (line + " " + token).strip()
+            if line and draw.textlength(test, font=face) > x1-x0:
+                lines.append(line)
+                line = token
+            else:
+                line = test
+        if line:
+            lines.append(line)
+        if any(draw.textlength(part, font=face) > x1-x0 for part in lines):
+            continue
+        heights = []
+        for part in lines:
+            b = draw.textbbox((0, 0), part, font=face)
+            heights.append(b[3]-b[1])
+        step = max(1, round(size*1.2))
+        height = (len(lines)-1)*step+max(heights)
+        if height > y1-y0:
+            continue
+        y = y0 + (y1-y0-height)//2
+        painted = []
+        for part, ph in zip(lines, heights):
+            tw = draw.textlength(part, font=face)
+            x = x0 if align == "left" else round((x0+x1-tw)/2)
+            b = draw.textbbox((x, y), part, font=face)
+            draw.text((x, y), part, font=face, fill=color)
+            painted.append(b)
+            y += step
+        actual = (min(b[0] for b in painted), min(b[1] for b in painted),
+                  max(b[2] for b in painted), max(b[3] for b in painted))
+        if actual[0] < x0 or actual[1] < y0 or actual[2] > x1 or actual[3] > y1:
+            # Do not ever deliver a text render that violates its allocation.
+            raise ValueError(f"text escaped its safe box: {actual} / {box}")
+        return actual
+    raise ValueError(f"Cannot fit text into safe box {box}: {text!r}")
+
+
 def cube(draw, x, y, side, color, width=4):
     # Flat isometric wireframe cube; all geometry is deterministic.
     p = [(x, y), (x+side, y), (x+side, y+side), (x, y+side)]
@@ -123,15 +175,24 @@ def make_frame(project, scene, local_time, global_time, asset=None):
     d.rounded_rectangle((int(56*s),line_y,int(664*s),line_y+max(2,int(5*s))), radius=4,fill='#37516D')
     d.rounded_rectangle((int(56*s),line_y,int(56*s)+int(608*s*smooth(progress)),line_y+max(2,int(5*s))), radius=4,fill=accent)
     if scene.get('overlay_text', True):
-        label = scene.get('eyebrow','БЕСПОЛЕЗНЫЕ ФАКТЫ')
-        face = font(int(20*s))
-        d.text((int(56*s),int(103*s)),label, font=face, fill=accent)
-        y = int(225*s + (1 - smooth(local_time*4))*55*s)
-        title = scene.get('title','')
-        y = center_text(d,title,y,w,int(64*s),fg)
+        # All editorial copy uses reserved safe zones, not guessed y offsets.
+        label = scene.get('eyebrow', 'БЕСПОЛЕЗНЫЕ ФАКТЫ')
+        draw_text_box(d, label, (int(56*s), int(100*s), int(664*s),
+                                 int(160*s)), max(14, int(21*s)), accent,
+                      align="left", min_size=max(10, int(13*s)))
+        rise = int((1-smooth(local_time*4))*28*s)
+        title = scene.get('title', '')
+        if title:
+            draw_text_box(d, title,
+                          (int(56*s), int(205*s)+rise, int(664*s), int(460*s)),
+                          max(22, int(64*s)), fg,
+                          min_size=max(15, int(23*s)))
         caption = scene.get('caption', '')
         if caption:
-            center_text(d,caption,max(y+int(28*s),int(470*s)),w,int(31*s),muted)
+            draw_text_box(d, caption,
+                          (int(56*s), int(475*s), int(664*s), int(680*s)),
+                          max(18, int(31*s)), muted,
+                          min_size=max(13, int(18*s)))
     typ = scene.get('type','title')
     if typ == 'compare':
         cy, radius = int(785*s), int(75*s)
@@ -140,9 +201,12 @@ def make_frame(project, scene, local_time, global_time, asset=None):
         cube(d,lx-radius,cy-radius//2,int(100*s),accent,width=max(2,int(5*s)))
         roll = int(smooth(progress)*56*s)
         d.ellipse((rx-radius+roll,cy-radius,rx+radius+roll,cy+radius), fill='#5D8CFA',outline=fg,width=max(2,int(3*s)))
-        center_text(d,scene.get('left','КУБ'),int(955*s),int(w*.64),int(27*s),fg,max_width=.8)
-        right = scene.get('right','ШАР')
-        d.text((int(465*s),int(957*s)),right,font=font(int(27*s)), fill=fg)
+        draw_text_box(d, scene.get('left', 'КУБ'),
+                      (int(56*s), int(935*s), int(330*s), int(1006*s)),
+                      max(15, int(27*s)), fg, min_size=max(10, int(14*s)))
+        draw_text_box(d, scene.get('right', 'ШАР'),
+                      (int(390*s), int(935*s), int(664*s), int(1006*s)),
+                      max(15, int(27*s)), fg, min_size=max(10, int(14*s)))
     elif typ == 'sequence':
         labels=scene.get('steps',['ФАКТ','ПОЧЕМУ','ВЫВОД'])[:4]
         n=len(labels)
@@ -150,9 +214,9 @@ def make_frame(project, scene, local_time, global_time, asset=None):
             x=int(w*(i+1)/(n+1))
             radius=int(45*s)
             d.rounded_rectangle((x-radius,int(765*s)-radius,x+radius,int(765*s)+radius),radius=int(15*s),fill=accent if i <= int(progress*n) else '#315C81')
-            face=font(int(18*s))
-            tw=d.textlength(label,font=face)
-            d.text((x-tw/2,int(865*s)),label,font=face,fill=fg)
+            half = int(w / (n+1) * .46)
+            draw_text_box(d, label, (x-half, int(847*s), x+half, int(920*s)),
+                          max(12, int(18*s)), fg, min_size=max(9, int(11*s)))
             if i<n-1:
                 d.line((x+radius+5,int(765*s),int(w*(i+2)/(n+1))-radius-5,int(765*s)),fill=fg,width=max(2,int(4*s)))
     elif typ in {'title','end'} and asset is None:

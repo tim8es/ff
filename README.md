@@ -6,7 +6,7 @@ A minimal, reusable workflow for colorful, narrated Shorts about surprising and 
 
 Create a ChatGPT Project named **FF**, then paste this **router** into its Project instructions:
 
-> Ты — FF, автономная студия коротких видео. Когда я пишу «Создай видео» или указываю тему, загрузи актуальный `AGENTS.md` из репозитория `tim8es/ff` через доступный GitHub-инструмент (для публичного репозитория допускается веб-доступ). Выполни описанный там цикл целиком прямо в этом чате: выбор и проверка факта, сценарий, генерация визуалов, анимация, русская озвучка, звук, проверка и самостоятельные исправления, экспорт реального MP4. Если тема не указана — выбери её сам. Не заменяй видео картинками и не объявляй успех без проверки результата. Не публикуй и не используй платные сервисы без моего согласия. Об изменениях репозитория спрашивай отдельно.
+> Ты — FF, автономная студия коротких видео. Когда я пишу «Создай видео» или указываю тему, загрузи актуальный `AGENTS.md` из репозитория `tim8es/ff` через доступный GitHub-инструмент (для публичного репозитория допускается веб-доступ). Выполни описанный там цикл целиком прямо в этом чате: выбор и проверка факта, сценарий, генерация визуалов, анимация, естественная русская или согласованная английская озвучка, звук, проверка и самостоятельные исправления, экспорт реального MP4. Если тема не указана — выбери её сам. Не заменяй видео картинками и не объявляй успех без проверки результата. Не публикуй и не используй платные сервисы без моего согласия. Об изменениях репозитория спрашивай отдельно.
 
 That is the **only** project-level instruction. No pasted code, local command setup or additional agents are required to describe the workflow.
 
@@ -14,7 +14,23 @@ That is the **only** project-level instruction. No pasted code, local command se
 
 Inside the FF project, simply write **«Создай видео»** or **«Создай видео про три сердца осьминога»**.
 
-The authoritative process and visual brand are in [AGENTS.md](AGENTS.md). [Skill pointer](skills/ff-shorts/SKILL.md) supports discovery by coding agents. The current [Python renderer](scripts/render.py) composites generated images and animated infographics; it does not generate images, video clips, speech or music itself. Actual video/voice creation depends on the tools available in the active ChatGPT session. The project router is **not** an installed plugin or a guarantee of access to external services.
+The authoritative process and visual brand are in [AGENTS.md](AGENTS.md). [Skill pointer](skills/ff-shorts/SKILL.md) supports discovery by coding agents. The [renderer](scripts/render.py) composites imagery and deterministic graphics; [voice.py](scripts/voice.py) creates scene-synchronized neural speech in Russian or English using Edge TTS; [qa.py](scripts/qa.py) enforces release checks. Actual generation still requires capable tools and outgoing TTS network access. A GitHub repository or ChatGPT instruction cannot grant those capabilities automatically.
+
+## Release path (fail-closed)
+
+Each episode has a `manifest.json` with `language` (`ru` or `en`), independent `sources` and 5–8 scenes. Each scene records `duration`, `narration`, `onscreen_text` and `visual_intent`, `motion_cue` and `visual_asset` (at least three distinct source assets). Generate diverse text-free images; render exact typography/diagrams as overlays. Review the result and set all seven review keys to `true` only if actually checked.
+
+```bash
+python -m pip install -r scripts/requirements.txt
+python -m scripts.voice --probe  # check current ru/en support first
+python -m scripts.voice /path/to/manifest.json --output /path/to/voice.wav --voice en-US-GuyNeural
+python scripts/render.py /path/to/manifest.json --assets /path/to/assets --audio /path/to/voice.wav --output /path/to/final.mp4
+python -m scripts.qa /path/to/manifest.json --video /path/to/final.mp4 --voice /path/to/voice.wav --receipt /path/to/voice.voice.json --review /path/to/review.json --report /path/to/qa.json
+```
+
+Required `review.json` booleans: `speech_understandable`, `facts_verified`, `motion_matches_narration`, `no_visual_artifacts`, `text_inside_safe_areas`, `hook_is_immediate`, `pace_and_ending_work`. Any missing or false check blocks release. This is a quality *gate*, not an assertion that automation can judge artistic quality.
+
+The example uses an English voice, so set `language` to `en` and write **all** narration/captions in English. For Russian use a working `ru-RU-...Neural` voice only if the live probe confirms it. On 30 Oct 2026 the hosted smoke test found both Russian Edge voices unavailable but the English one working. Edge TTS is unofficial and online; it needs network access, may change without notice, and must never silently fall back to eSpeak. Equivalent independently evaluated neural voices can be used with a matching provenance receipt. GitHub does not automatically launch video production from a chat message.
 
 ## Local fallback and tests
 
