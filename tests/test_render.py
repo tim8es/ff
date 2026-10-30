@@ -5,10 +5,29 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.render import load_project, make_frame, render_video
+from scripts.render import load_project, make_frame, render_video, draw_text_box
+from PIL import Image, ImageDraw
 
 
 class ShortsRendererTests(unittest.TestCase):
+    def test_caption_box_fits_last_frame_phrase(self):
+        image = Image.new("RGB", (720, 1280))
+        draw = ImageDraw.Draw(image)
+        safe = (58, 845, 662, 993)
+        painted = draw_text_box(
+            draw, "КАЛЕНДАРЬ БЫСТРЕЕ ЧАСОВ", safe, 42, "white")
+        self.assertGreaterEqual(painted[0], safe[0])
+        self.assertGreaterEqual(painted[1], safe[1])
+        self.assertLessEqual(painted[2], safe[2])
+        self.assertLessEqual(painted[3], safe[3])
+
+    def test_oversized_unbreakable_copy_fails_not_clips(self):
+        image = Image.new("RGB", (720, 1280))
+        draw = ImageDraw.Draw(image)
+        with self.assertRaisesRegex(ValueError, "Cannot fit"):
+            draw_text_box(draw, "Ш" * 120, (50, 800, 250, 900),
+                          48, "white", min_size=18)
+
     def test_validates_project(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'bad.json'
