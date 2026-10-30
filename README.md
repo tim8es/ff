@@ -22,7 +22,8 @@ Each episode has a `manifest.json` with `language` (`ru` or `en`), independent `
 
 ```bash
 python -m pip install -r scripts/requirements.txt
-python -m scripts.voice /path/to/manifest.json --output /path/to/voice.wav
+python -m scripts.voice --probe  # check available voices before choosing ru vs en
+python -m scripts.voice /path/to/manifest.json --output /path/to/voice.wav --voice ru-RU-SvetlanaNeural
 python scripts/render.py /path/to/manifest.json --assets /path/to/assets --audio /path/to/voice.wav --output /path/to/final.mp4
 python -m scripts.qa /path/to/manifest.json --video /path/to/final.mp4 --voice /path/to/voice.wav --receipt /path/to/voice.voice.json --review /path/to/review.json --report /path/to/qa.json
 ```
