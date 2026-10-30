@@ -107,8 +107,8 @@ def validate(manifest_path, video, voice, receipt, review):
             errors.append("Narration file missing")
         else:
             meta = json.loads(Path(receipt).read_text(encoding="utf8"))
-            if meta.get("engine") != "edge-tts":
-                errors.append("Unapproved narration engine")
+            if meta.get("neural") is not True or meta.get("engine", "").lower() in ("espeak", "espeak-ng"):
+                errors.append("Release requires a neural TTS engine")
             if meta.get("language") != data.get("language"):
                 errors.append("Narration language differs from manifest")
             if meta.get("script_sha256") != script_hash(scenes):
@@ -117,7 +117,7 @@ def validate(manifest_path, video, voice, receipt, review):
                     Path(voice).read_bytes()).hexdigest():
                 errors.append("Narration audio does not match receipt")
     else:
-        errors.append("Missing Edge TTS voice audio or provenance receipt")
+        errors.append("Missing neural voice audio or provenance receipt")
     if review:
         judgments = json.loads(Path(review).read_text(encoding="utf8"))
         missing = [key for key in REVIEW_KEYS if judgments.get(key) is not True]
