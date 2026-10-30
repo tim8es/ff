@@ -1,0 +1,70 @@
+name: FF voice identity smoke (synthetic reference only)
+on:
+  push:
+    paths:
+      - "scripts/tts.py"
+      - "scripts/voice_clone.py"
+      - "scripts/clone_smoke.py"
+      - "examples/clone_*.txt"
+      - ".github/workflows/voice-clone-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  voice-clone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [qwen, conversion]
+    env:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_XET: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Audio tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libsndfile1 espeak-ng
+      - name: Common runtime and ephemeral Piper reference
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26,<3" "soundfile>=0.12,<1" "piper-tts==1.8.0"
+      - name: CPU PyTorch Qwen
+        if: matrix.mode == 'qwen'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
+          python -m pip install "qwen-tts"
+      - name: CPU PyTorch and upstream ChatterboxVC/Kokoro
+        if: matrix.mode == 'conversion'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 torchaudio==2.6.0
+          python -m pip install "kokoro==0.9.4" "chatterbox-tts==0.1.7"
+      - name: Synthesize identical EN/RU lines from synthetic target
+        run: |
+          python -m scripts.clone_smoke --mode "${{ matrix.mode }}" --output-dir out
+      - name: Check format for completed clips
+        if: always()
+        run: |
+          for file in out/*.wav; do
+            test -e "$file" || continue
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "$file"
+          done
+      - name: Upload test outputs only (no personal voice reference)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-voice-clone-smoke-${{ matrix.mode }}
+          path: |
+            out/*.wav
+            out/*.voice.json
+            out/smoke_report.json
+          if-no-files-found: warn
+          retention-days: 3
