@@ -95,11 +95,19 @@ def validate(manifest_path, video, voice, receipt, review):
     }
     if len(hosts - {None}) < 2:
         errors.append("At least 2 independently hosted evidence URLs required")
+    visual_assets = set()
     for i, s in enumerate(scenes):
         if not s.get("visual_intent") or not s.get("narration"):
             errors.append(f"Scene {i}: narration/visual_intent missing")
         if not s.get("onscreen_text"):
             errors.append(f"Scene {i}: exact onscreen_text missing")
+        if not s.get("motion_cue"):
+            errors.append(f"Scene {i}: motion_cue missing")
+        asset = s.get("visual_asset") or s.get("image")
+        if asset:
+            visual_assets.add(asset)
+    if len(visual_assets) < 3:
+        errors.append("At least three distinct visual assets are required")
     if data.get("language") not in ("ru", "en"):
         errors.append("Explicit language: ru or en")
     if receipt and voice:
