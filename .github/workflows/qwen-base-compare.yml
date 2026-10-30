@@ -1,0 +1,129 @@
+name: FF - Qwen3 Base 0.6B vs 1.7B (GitHub CPU)
+on:
+  push:
+    paths:
+      - ".github/workflows/qwen-base-compare.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "demo (public voice) or private (encrypted voice; requires repository secret)"
+        type: choice
+        required: true
+        default: demo
+        options: [demo, private]
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        model_size: ["0.6B", "1.7B"]
+    env:
+      FF_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install speech runtime (CPU; no paid API)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libsndfile1
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
+          python -m pip install qwen-tts soundfile numpy cryptography
+      - name: Write identical public test scripts
+        run: |
+          mkdir -p scripts_tmp out
+          python - <<'PY'
+          from pathlib import Path
+          Path("scripts_tmp/ru.txt").write_text(
+              "Представьте, что некоторые морские животные появились гораздо раньше первых лесов. "
+              "Природа хранит истории, которые кажутся невероятными, но подтверждаются научными открытиями.",
+              encoding="utf-8")
+          Path("scripts_tmp/en.txt").write_text(
+              "Imagine that some marine animals appeared long before the first forests. "
+              "Nature holds stories that seem impossible, yet scientific discoveries show they are real.",
+              encoding="utf-8")
+          PY
+      - name: Prepare demo reference (not a personal recording)
+        if: env.FF_MODE == 'demo'
+        run: |
+          mkdir -p demo
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlretrieve
+          urlretrieve("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav",
+                      "demo/reference.wav")
+          Path("demo/reference.txt").write_text(
+              "Okay. Yeah. I resent you. I love you. I respect you. "
+              "But you know what? You blew it! And thanks to you.",
+              encoding="utf-8")
+          PY
+      - name: Decrypt authorized voice reference (secret never in logs)
+        if: env.FF_MODE == 'private'
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          test -n "$FF_VOICE_BUNDLE_KEY" || { echo "Missing repository secret FF_VOICE_BUNDLE_KEY"; exit 1; }
+          test -f .private_voice/reference.bundle || { echo "Missing encrypted reference bundle"; exit 1; }
+          python -m scripts.voice_secure unpack-reference \
+            --source .private_voice/reference.bundle --dest "$RUNNER_TEMP/ff_voice_ref"
+      - name: Generate Russian and English (same model and voice)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$FF_MODE" = "private" ]; then
+            ref="$RUNNER_TEMP/ff_voice_ref/reference.wav"
+            reftext="$RUNNER_TEMP/ff_voice_ref/reference.txt"
+          else
+            ref="demo/reference.wav"
+            reftext="demo/reference.txt"
+          fi
+          for lang in ru en; do
+            python -m scripts.tts --provider qwen3_clone \
+              --model-size "${{ matrix.model_size }}" --language "$lang" \
+              --reference "$ref" --reference-text-file "$reftext" \
+              --text-file "scripts_tmp/$lang.txt" --output "out/qwen_$lang.wav"
+            ffmpeg -v error -xerror -i "out/qwen_$lang.wav" -f null -
+          done
+      - name: Encrypt private cloned outputs before artifact upload
+        if: env.FF_MODE == 'private'
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          python -m scripts.voice_secure pack-results \
+            --source out --dest encrypted_result.bundle
+          rm -rf out "$RUNNER_TEMP/ff_voice_ref"
+      - name: Remove temporary personal audio
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/ff_voice_ref"
+          if [ "$FF_MODE" = "private" ]; then rm -rf out; fi
+      - name: Upload PRIVATE encrypted output only (no raw WAV)
+        if: success() && env.FF_MODE == 'private'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-private-qwen-${{ matrix.model_size }}
+          path: encrypted_result.bundle
+          retention-days: 1
+          if-no-files-found: error
+      - name: Upload PUBLIC demonstration only
+        if: success() && env.FF_MODE == 'demo'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-demo-qwen-${{ matrix.model_size }}
+          path: |
+            out/*.wav
+            out/*.voice.json
+          retention-days: 3
+          if-no-files-found: error
