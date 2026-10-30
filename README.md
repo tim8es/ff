@@ -1,18 +1,24 @@
-# FF — Chat-first Shorts factory
+# FF — chat-first short video studio
 
-Reusable production process for short videos about **absurd but verified facts**. The assistant handles research, script, visual assets, motion graphics, MP4 render, and QA **inside the chat**; this repository stores the recipe and offline compositor, not the conversation or generated media.
+A minimal, reusable workflow for colorful, narrated Shorts about surprising and useless-but-verified facts. The assistant plans, generates, animates, narrates, checks and delivers the MP4 **inside ChatGPT**.
 
-## Use from ChatGPT
+## ChatGPT Project setup
 
-Say: **«FF, сделай Shorts про три сердца осьминога»** or **«Сделай ролик через ff на выбранную тобой тему»**.
+Create a ChatGPT Project named **FF**, then paste this **router** into its Project instructions:
 
-The assistant should fetch the current [`AGENTS.md`](AGENTS.md), [`skills/ff-shorts/SKILL.md`](skills/ff-shorts/SKILL.md), and this repository's example. Generate the visuals in the chat, render a real MP4 and return a sandbox file link. **Do not respond with images or a storyboard instead of a requested video.**
+> Ты — FF, автономная студия коротких видео. Когда я пишу «Создай видео» или указываю тему, загрузи актуальный `AGENTS.md` из репозитория `tim8es/ff` через доступный GitHub-инструмент (для публичного репозитория допускается веб-доступ). Выполни описанный там цикл целиком прямо в этом чате: выбор и проверка факта, сценарий, генерация визуалов, анимация, русская озвучка, звук, проверка и самостоятельные исправления, экспорт реального MP4. Если тема не указана — выбери её сам. Не заменяй видео картинками и не объявляй успех без проверки результата. Не публикуй и не используй платные сервисы без моего согласия. Об изменениях репозитория спрашивай отдельно.
 
-This is a reusable chat convention, **not an automatically installed ChatGPT tool or background worker**. A fresh chat needs access to this repository and video-capable tools. The assistant may use a different renderer when necessary, but must produce an actual, verifiable playable video or state the blocker.
+That is the **only** project-level instruction. No pasted code, local command setup or additional agents are required to describe the workflow.
 
-## Local fallback
+## Run
 
-Requires Python 3.11+, Pillow, FFmpeg + FFprobe.
+Inside the FF project, simply write **«Создай видео»** or **«Создай видео про три сердца осьминога»**.
+
+The authoritative process and visual brand are in [AGENTS.md](AGENTS.md). [Skill pointer](skills/ff-shorts/SKILL.md) supports discovery by coding agents. The current [Python renderer](scripts/render.py) composites generated images and animated infographics; it does not generate images, video clips, speech or music itself. Actual video/voice creation depends on the tools available in the active ChatGPT session. The project router is **not** an installed plugin or a guarantee of access to external services.
+
+## Local fallback and tests
+
+Requires Python 3.11+, Pillow, FFmpeg / FFprobe:
 
 ```bash
 python -m pip install -r scripts/requirements.txt
@@ -20,14 +26,6 @@ python scripts/render.py examples/wombat.json --output /tmp/wombat.mp4
 python -m unittest discover -s tests -v
 ```
 
-Optional: `--assets path/to/generated/images --audio path/to/final_mix.wav`. Image-backed scenes require `image` to point to an existing asset relative to `--assets`. Missing assets raise an error. Without audio the fallback output contains a silent track; supply a properly mixed narration/music file for the final release.
+To include generated hero imagery use `--assets path/to/images` and scene `image` fields. To include narration use `--audio /path/to/final_mix.wav`. The built-in wombat example intentionally illustrates the basic compositor only and **does not meet final channel quality**.
 
-## Production files
-
-- [`AGENTS.md`](AGENTS.md) — how an in-chat assistant runs FF.
-- [`skills/ff-shorts/SKILL.md`](skills/ff-shorts/SKILL.md) — reusable workflow and quality gates.
-- [`examples/wombat.json`](examples/wombat.json) — example script/scene timeline.
-- [`scripts/render.py`](scripts/render.py) — deterministic animated typography/infographic compositor to MP4.
-- [`tests/test_render.py`](tests/test_render.py) — render and failure-path tests.
-
-**Scope:** draft videos in the chat, no auto-posting, no paid services without user authorization. Generated visuals, tracks, subtitles and source URLs stay with each project as separate assets and are not committed to GitHub by default.
+No autonomous publishing, no paid services without consent, and no changes to repo instruction files during ordinary generation.
