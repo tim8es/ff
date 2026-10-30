@@ -1,2 +1,4 @@
 Pillow>=10.4,<13
 edge-tts==7.3.1
+numpy>=1.26,<3
+soundfile>=0.12,<1
