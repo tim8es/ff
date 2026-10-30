@@ -93,6 +93,25 @@ cloning requires a trusted local or private execution environment and
 private storage/transfer. `.gitignore` reduces accidents but does not prevent
 forced commits (`git add -f`), malicious actions, or exposure after committing.
 
+### Compare Base 0.6B against 1.7B on one authorized sample
+
+The default model is still `0.6B`. Model size can be selected **without editing source code**:
+
+```bash
+python -m scripts.tts --provider qwen3_clone --model-size 0.6B \
+  --language ru --reference /private/voice.wav \
+  --reference-text-file /private/transcript.txt \
+  --text-file /private/story_ru.txt --output /private/qwen06_ru.wav
+
+python -m scripts.tts --provider qwen3_clone --model-size 1.7B \
+  --language ru --reference /private/voice.wav \
+  --reference-text-file /private/transcript.txt \
+  --text-file /private/story_ru.txt --output /private/qwen17_ru.wav
+```
+
+The equivalent manifest setting is `"tts": {"provider": "qwen3_clone", "model_size": "1.7B", ...}`.
+Only the two released Qwen3 **Base** checkpoints are accepted. The selected checkpoint appears in the WAV receipt's `model` field. Do not upload private reference audio or derived cloned speech to public GitHub Actions. The larger 1.7B model needs more RAM and CPU time, and local availability is not guaranteed.
+
 ## Voice conversion: Kokoro (English) or Piper (Russian) + ChatterboxVC
 
 Unlike Kokoro itself, upstream Resemble **ChatterboxVC** can change the speaker timbre of existing speech from a short target reference without training an RVC model. The same FF voice output format and QA rules apply. The model is optional; no need to install it for ordinary Kokoro or Qwen3.

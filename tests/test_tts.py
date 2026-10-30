@@ -71,6 +71,42 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual([x[1]["language"] for x in fake.calls if x[0] == "generate"],
                              ["Russian", "English"])
 
+    def test_qwen_model_size_parameter_and_selection(self):
+        import numpy as np
+        import soundfile as sf
+        from scripts.tts_qwen import Qwen3VoiceCloner
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / "fixture.wav"
+            sf.write(p, np.zeros(24000 * 5), 24000)
+
+            class FakeModel:
+                def create_voice_clone_prompt(self, **kwargs):
+                    return ["private-prompt"]
+                def generate_voice_clone(self, **kwargs):
+                    time = np.arange(24000 * 3, dtype=np.float32) / 24000
+                    return [0.12 * np.sin(2 * np.pi * 300 * time)], 24000
+
+            for size, expected in (
+                ("0.6B", "Qwen/Qwen3-TTS-12Hz-0.6B-Base"),
+                ("1.7B", "Qwen/Qwen3-TTS-12Hz-1.7B-Base"),
+            ):
+                fake = Qwen3VoiceCloner(p, "Synthetic test voice.", model=FakeModel(),
+                                        model_size=size)
+                self.assertEqual(fake.model_id, expected)
+                with patch("scripts.tts_qwen.Qwen3VoiceCloner", return_value=fake) as mk:
+                    receipt = tts.generate(
+                        "Checking model selection.", Path(directory) / (size + ".wav"),
+                        provider="qwen3_clone", reference=p,
+                        reference_text="Synthetic test voice.", model_size=size)
+                    mk.assert_called_once_with(p, "Synthetic test voice.", model_size=size)
+                    self.assertEqual(receipt["model"], expected)
+            with self.assertRaisesRegex(ValueError, "Unsupported Qwen3 model size"):
+                Qwen3VoiceCloner(p, "Synthetic test voice.", model=FakeModel(),
+                                 model_size="unknown")
+            with self.assertRaisesRegex(ValueError, "only supported by qwen3_clone"):
+                tts.generate("Hello!", Path(directory) / "wrong.wav",
+                             provider="kokoro", model_size="1.7B")
+
     def test_speech_split(self):
         self.assertEqual(tts.split_sentences("First. Second? Third!"),
                          ["First.", "Second?", "Third!"])
