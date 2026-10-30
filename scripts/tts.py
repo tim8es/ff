@@ -118,7 +118,7 @@ def _edge(text, voice, language):
 BACKENDS = {"silero": _silero, "kokoro": _kokoro, "piper": _piper, "edge": _edge, "qwen3_clone": None}
 
 
-def speech(text, provider, language, voice, target, *, cloner=None):
+def speech(text, provider, language, voice, target, *, cloner=None, converter=None):
     import numpy as np
     import soundfile as sf
     if provider == "qwen3_clone":
@@ -133,20 +133,40 @@ def speech(text, provider, language, voice, target, *, cloner=None):
     if not np.isfinite(samples).all() or np.max(np.abs(samples)) < .001:
         raise RuntimeError("Invalid/silent model output")
     sf.write(str(target), samples, rate, subtype="PCM_16")
+    if converter is not None:
+        target = Path(target)
+        converted = target.with_name(target.stem + "_converted.wav")
+        try:
+            converter.convert(target, converted)
+            converted.replace(target)
+        finally:
+            converted.unlink(missing_ok=True)
     return model_id
 
 
 def generate(text, output, *, provider, language="en", voice=None, durations=None,
-             reference=None, reference_text=None):
+             reference=None, reference_text=None, voice_conversion=None):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
     cloner = None
+    converter = None
+    if voice_conversion not in (None, "chatterbox"):
+        raise ValueError("Unknown voice conversion: " + str(voice_conversion))
     if provider == "qwen3_clone":
+        if voice_conversion:
+            raise ValueError("Qwen3 already clones; do not stack voice conversion")
         if selected != "reference":
             raise ValueError("qwen3_clone uses a voice reference, not a preset name")
         from scripts.tts_qwen import Qwen3VoiceCloner
         cloner = Qwen3VoiceCloner(reference, reference_text)
+    elif voice_conversion == "chatterbox":
+        if provider not in ("kokoro", "piper"):
+            raise ValueError("Chatterbox conversion supports Kokoro EN or Piper RU")
+        if reference_text is not None:
+            raise ValueError("Reference transcript is only for Qwen3 direct cloning")
+        from scripts.tts_conversion import ChatterboxVoiceConverter
+        converter = ChatterboxVoiceConverter(reference)
     elif reference is not None or reference_text is not None:
         raise ValueError("Reference audio is only valid for a cloning provider")
     output = Path(output)
@@ -155,7 +175,8 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         tmp = Path(directory)
         if durations is None:
             raw = tmp / "raw.wav"
-            model_id = speech(text, provider, language, selected, raw, cloner=cloner)
+            model_id = speech(text, provider, language, selected, raw,
+                              cloner=cloner, converter=converter)
             transcript = text.strip()
         else:
             if len(durations) != len(text):
@@ -163,7 +184,8 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
             fragments = []
             for i, utterance in enumerate(text):
                 target = tmp / f"segment_{i}.wav"
-                speech(utterance, provider, language, selected, target, cloner=cloner)
+                speech(utterance, provider, language, selected, target,
+                       cloner=cloner, converter=converter)
                 fragments.append(target)
             raw = tmp / "aligned.wav"
             compose_timeline(fragments, durations, raw)
@@ -184,7 +206,10 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         "text_sha256": hashlib.sha256(transcript.encode("utf8")).hexdigest(),
         "audio_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
         "status": "generated_not_auditioned",
-        "voice_cloned": provider == "qwen3_clone",
+        "voice_cloned": provider == "qwen3_clone" or bool(voice_conversion),
+        "voice_conversion": voice_conversion,
+        "conversion_license_note": ("Resemble ChatterboxVC MIT"
+                                    if voice_conversion else None),
     }
     if durations is not None:
         metadata["scene_count"] = len(text)
@@ -202,6 +227,7 @@ def main():
     p.add_argument("--provider", choices=tuple(BACKENDS))
     p.add_argument("--language", choices=("en", "ru"))
     p.add_argument("--voice")
+    p.add_argument("--voice-conversion", choices=("chatterbox",))
     p.add_argument("--reference", type=Path, help="Private local reference recording (cloning only)")
     p.add_argument("--reference-text-file", type=Path,
                    help="Exact transcript of the reference recording (cloning only)")
@@ -212,6 +238,7 @@ def main():
         cfg = manifest.get("tts", {})
         provider = args.provider or cfg.get("provider", "edge")
         voice = args.voice or cfg.get("voice")
+        voice_conversion = args.voice_conversion or cfg.get("voice_conversion")
         language = args.language or manifest.get("language", "ru")
         lines = [scene["narration"] for scene in manifest["scenes"]]
         duration = [float(scene["duration"]) for scene in manifest["scenes"]]
@@ -229,7 +256,8 @@ def main():
                           if transcript_file else None)
         result = generate(lines, args.output, provider=provider, language=language,
                           voice=voice, durations=duration,
-                          reference=reference, reference_text=reference_text)
+                          reference=reference, reference_text=reference_text,
+                          voice_conversion=voice_conversion)
     else:
         if not args.provider:
             p.error("--provider required when using --text-file")
@@ -238,7 +266,8 @@ def main():
         result = generate(args.text_file.read_text(encoding="utf8"), args.output,
                           provider=args.provider, language=args.language or "en",
                           voice=args.voice, reference=args.reference,
-                          reference_text=reference_text)
+                          reference_text=reference_text,
+                          voice_conversion=args.voice_conversion)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
