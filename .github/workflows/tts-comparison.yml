@@ -37,10 +37,14 @@ jobs:
       - name: Install lightweight Piper
         if: matrix.provider == 'piper'
         run: python -m pip install "piper-tts==1.8.0"
-      - name: Install CPU PyTorch
-        if: matrix.provider == 'silero' || matrix.provider == 'kokoro'
+      - name: Install CPU PyTorch for Silero
+        if: matrix.provider == 'silero'
         run: |
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchaudio==2.5.1
+      - name: Install modern CPU PyTorch for Kokoro
+        if: matrix.provider == 'kokoro'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
       - name: Install Silero runtime
         if: matrix.provider == 'silero'
         run: python -m pip install "omegaconf>=2.3,<3"
