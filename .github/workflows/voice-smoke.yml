@@ -29,6 +29,8 @@ jobs:
             'scenes': [{'duration': 6.0, 'narration': 'This is a short test of clear natural English speech.'}]
           }, ensure_ascii=False), encoding='utf-8')
           PY
+      - name: Probe both Russian neural voices and the English voice
+        run: python -m scripts.voice --probe
       - name: Test Russian and English Edge TTS independently
         run: |
           set +e
