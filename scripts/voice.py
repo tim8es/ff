@@ -105,7 +105,7 @@ async def synthesize(manifest_path, output, voice=None, rate="+0%"):
             parts.append(part)
         compose_timeline(parts, durations, output)
     receipt = {
-        "engine": "edge-tts", "voice": selected, "language": language,
+        "engine": "edge-tts", "neural": True, "voice": selected, "language": language,
         "script_sha256": script_hash(scenes),
         "scene_count": len(scenes),
         "duration": media_duration(output),
