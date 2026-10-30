@@ -1,0 +1,20 @@
+# Personal reference audio and transcript: NEVER commit to a public repository
+/private/
+/voice_samples/
+/*.ref.wav
+/*.ref.mp3
+/*.ref.m4a
+/*.ref.flac
+
+# Downloaded checkpoints and produced media
+/.cache/
+/models/
+/out/
+/output/
+/*.wav
+/*.mp3
+/*.m4a
+/*.mp4
+/__pycache__/
+.pytest_cache/
+.venv/
