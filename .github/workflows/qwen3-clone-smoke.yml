@@ -1,11 +1,6 @@
 name: FF - Qwen3 public demo clone smoke
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "scripts/tts_qwen.py"
-      - "scripts/tts.py"
-      - ".github/workflows/qwen3-clone-smoke.yml"
 permissions:
   contents: read
 jobs:
