@@ -39,6 +39,15 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     verify_assets(workspace)
     manifest_path = workspace / "manifest.json"
     manifest = load_project(manifest_path)
+    tts = manifest.get("tts", {})
+    if voice_mode == "owner":
+        if tts.get("profile") != "ff_owner":
+            raise ValueError("Owner mode requires manifest tts.profile=ff_owner")
+        if tts.get("provider") not in (None, "qwen3_clone"):
+            raise ValueError("Owner voice profile conflicts with manifest provider")
+    else:
+        if tts.get("profile") or tts.get("provider", "piper") != "piper":
+            raise ValueError("Public draft must explicitly use Piper, not a private voice profile")
     narration = [scene["narration"] for scene in manifest["scenes"]]
     durations = [scene["duration"] for scene in manifest["scenes"]]
     language = manifest.get("language")
