@@ -24,7 +24,7 @@
 
 ## FF Actions MP4 preview
 
-When the user requests that Qwen3-TTS 1.7B personal narration be integrated into the final MP4, use `scripts.production` and the trusted `.github/workflows/production.yml` with `mode: owner` and a staged `tts.profile: ff_owner` manifest. Both input voice reference and output MP4 are encrypted; never publish private voice audio in a public artifact. Technical-only QA always returns `release_ready: false`; complete visual/audible/factual review separately before calling the video finished. See `docs/mp4-actions.md`. Other narration modes are available for synthetic smoke tests but are not replacements for the authorized owner's voice.
+When the user requests that Qwen3-TTS 1.7B personal narration be integrated into the final MP4, use `scripts.production` and the trusted `.github/workflows/production.yml` with `mode: owner` and a staged `tts.profile: ff_owner` manifest. Both input voice reference and output MP4 are encrypted; never publish private voice audio in a public artifact. Technical-only QA always returns `release_ready: false`; complete visual/audible/factual review separately before calling the video finished. See `docs/production-actions.md`. Other narration modes are available for synthetic smoke tests but are not replacements for the authorized owner's voice.
 
 ## Channel art direction
 
