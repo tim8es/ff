@@ -4,6 +4,7 @@ Only local reference audio is accepted. Do not upload personal recordings to
 public repositories or GitHub Actions artifacts.
 """
 from pathlib import Path
+from time import perf_counter
 
 SUPPORTED_MODEL_SIZES = {
     "0.6B": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
@@ -41,6 +42,7 @@ class Qwen3VoiceCloner:
         self.model_id = SUPPORTED_MODEL_SIZES[model_size]
         self.reference = validate_reference(reference, reference_text)
         self.reference_text = reference_text.strip()
+        load_start = perf_counter()
         if model is None:
             import torch
             from qwen_tts import Qwen3TTSModel
@@ -49,11 +51,17 @@ class Qwen3VoiceCloner:
             model = Qwen3TTSModel.from_pretrained(
                 self.model_id, device_map="cpu", dtype=torch.float32)
         self.model = model
+        model_load_s = perf_counter() - load_start
+        prompt_start = perf_counter()
         self.prompt = model.create_voice_clone_prompt(
             ref_audio=str(self.reference),
             ref_text=self.reference_text,
             x_vector_only_mode=False,
         )
+        self.timings = {
+            "model_load_including_download_s": round(model_load_s, 3),
+            "voice_conditioning_s": round(perf_counter() - prompt_start, 3),
+        }
 
     def synthesize(self, text, language):
         import numpy as np

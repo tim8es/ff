@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -243,6 +244,8 @@ def main():
     source.add_argument("--text-file", type=Path)
     source.add_argument("--manifest", type=Path)
     p.add_argument("--provider", choices=tuple(BACKENDS))
+    from scripts.voice_profiles import VOICE_PROFILES, resolve_profile
+    p.add_argument("--profile", choices=tuple(VOICE_PROFILES))
     p.add_argument("--language", choices=("en", "ru"))
     p.add_argument("--voice")
     p.add_argument("--model-size", choices=("0.6B", "1.7B"),
@@ -256,19 +259,27 @@ def main():
     if args.manifest:
         manifest = json.loads(args.manifest.read_text(encoding="utf8"))
         cfg = manifest.get("tts", {})
-        provider = args.provider or cfg.get("provider", "edge")
+        language = args.language or manifest.get("language", "ru")
+        profile_name = args.profile or cfg.get("profile")
+        explicit_provider = args.provider or cfg.get("provider")
+        explicit_size = args.model_size or cfg.get("model_size")
+        profile = (resolve_profile(profile_name, language=language,
+                                   provider=explicit_provider,
+                                   model_size=explicit_size)
+                   if profile_name else None)
+        provider = profile["provider"] if profile else (explicit_provider or "edge")
+        model_size = profile["model_size"] if profile else explicit_size
         voice = args.voice or cfg.get("voice")
         voice_conversion = args.voice_conversion or cfg.get("voice_conversion")
-        model_size = args.model_size or cfg.get("model_size")
-        language = args.language or manifest.get("language", "ru")
         lines = [scene["narration"] for scene in manifest["scenes"]]
         duration = [float(scene["duration"]) for scene in manifest["scenes"]]
-        reference = args.reference or cfg.get("reference")
+        reference = args.reference or cfg.get("reference") or os.environ.get("FF_VOICE_REFERENCE")
         if reference:
             reference = Path(reference).expanduser()
             if not reference.is_absolute():
                 reference = args.manifest.parent / reference
-        transcript_file = args.reference_text_file or cfg.get("reference_text_file")
+        transcript_file = (args.reference_text_file or cfg.get("reference_text_file")
+                           or os.environ.get("FF_VOICE_TRANSCRIPT_FILE"))
         if transcript_file:
             transcript_file = Path(transcript_file).expanduser()
             if not transcript_file.is_absolute():
@@ -280,16 +291,26 @@ def main():
                           reference=reference, reference_text=reference_text,
                           voice_conversion=voice_conversion, model_size=model_size)
     else:
-        if not args.provider:
-            p.error("--provider required when using --text-file")
-        reference_text = (args.reference_text_file.read_text(encoding="utf8")
-                          if args.reference_text_file else None)
+        language = args.language or "en"
+        profile = (resolve_profile(args.profile, language=language,
+                                   provider=args.provider,
+                                   model_size=args.model_size)
+                   if args.profile else None)
+        provider = profile["provider"] if profile else args.provider
+        if not provider:
+            p.error("--provider or --profile required when using --text-file")
+        model_size = profile["model_size"] if profile else args.model_size
+        reference = args.reference or os.environ.get("FF_VOICE_REFERENCE")
+        transcript_file = (args.reference_text_file or
+                           os.environ.get("FF_VOICE_TRANSCRIPT_FILE"))
+        reference_text = (Path(transcript_file).read_text(encoding="utf8")
+                          if transcript_file else None)
         result = generate(args.text_file.read_text(encoding="utf8"), args.output,
-                          provider=args.provider, language=args.language or "en",
-                          voice=args.voice, reference=args.reference,
+                          provider=provider, language=language,
+                          voice=args.voice, reference=reference,
                           reference_text=reference_text,
                           voice_conversion=args.voice_conversion,
-                          model_size=args.model_size)
+                          model_size=model_size)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

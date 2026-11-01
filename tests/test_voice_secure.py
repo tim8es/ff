@@ -42,13 +42,20 @@ class VoiceBundleTests(unittest.TestCase):
                 for lang in ("en", "ru"):
                     (result_folder / ("qwen_" + lang + ".voice.json")).write_text(
                         json.dumps({"engine": "qwen3_clone", "lang": lang}), encoding="utf8")
+                metrics = {"model": "Qwen3 1.7B", "phases": {"total_s": 12.5}}
+                (result_folder / "tts_performance.json").write_text(
+                    json.dumps(metrics), encoding="utf8")
                 artifact = folder / "result.bundle"
                 voice_secure.pack_results(result_folder, artifact)
                 output = folder / "output"
-                expected = {"qwen_ru.wav", "qwen_en.wav",
+                required = {"qwen_ru.wav", "qwen_en.wav",
                             "qwen_ru.voice.json", "qwen_en.voice.json"}
-                voice_secure._decrypt(artifact, expected, output)
+                expected = required | {"tts_performance.json"}
+                voice_secure._decrypt(artifact, expected, output, required=required)
                 self.assertEqual(sorted(p.name for p in output.iterdir()), sorted(expected))
+                self.assertEqual(json.loads((output / "tts_performance.json").read_text()),
+                                 metrics)
+                self.assertNotIn(b"total_s", artifact.read_bytes())
 
             with patch.dict(os.environ, {"FF_VOICE_BUNDLE_KEY": Fernet.generate_key().decode()}):
                 with self.assertRaisesRegex(ValueError, "Wrong key"):

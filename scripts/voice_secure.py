@@ -36,7 +36,7 @@ def _pack(entries):
     return mem.getvalue()
 
 
-def _decrypt(src, expected, directory):
+def _decrypt(src, expected, directory, required=None):
     data = Path(src).read_bytes()
     if len(data) > MAX_BUNDLE_BYTES:
         raise ValueError("Encrypted bundle too large")
@@ -48,7 +48,7 @@ def _decrypt(src, expected, directory):
         names = z.namelist()
         if len(names) != len(set(names)) or not set(names).issubset(expected):
             raise ValueError("Unexpected entries in encrypted bundle")
-        if not expected.issubset(names):
+        if not (required if required is not None else expected).issubset(names):
             raise ValueError("Required files missing in encrypted bundle")
         for item in z.infolist():
             if item.file_size > MAX_BUNDLE_BYTES:
@@ -76,7 +76,8 @@ def pack(reference, transcript, destination):
 
 def pack_results(src, dest):
     paths = sorted(p for p in Path(src).iterdir() if
-                   p.suffix == ".wav" or p.name.endswith(".voice.json"))
+                   p.suffix == ".wav" or p.name.endswith(".voice.json")
+                   or p.name == "tts_performance.json")
     if len(paths) < 2:
         raise ValueError("Missing cloned speech WAVs")
     payload = _pack({p.name: p.read_bytes() for p in paths})
@@ -102,9 +103,10 @@ def main():
     elif args.action == "pack-results":
         pack_results(args.source, args.dest)
     else:
-        expected = {"qwen_ru.wav", "qwen_en.wav",
+        required = {"qwen_ru.wav", "qwen_en.wav",
                     "qwen_ru.voice.json", "qwen_en.voice.json"}
-        _decrypt(args.source, expected, args.dest)
+        _decrypt(args.source, required | {"tts_performance.json"},
+                 args.dest, required=required)
     print("Encrypted voice bundle operation completed")
 
 

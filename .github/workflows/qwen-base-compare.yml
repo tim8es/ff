@@ -8,6 +8,12 @@ on:
         required: true
         default: demo
         options: [demo, private]
+      model_size:
+        description: "1.7B (FF default), 0.6B, or both for benchmarking"
+        type: choice
+        required: true
+        default: 1.7B
+        options: [1.7B, 0.6B, both]
 permissions:
   contents: read
 
@@ -19,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model_size: ["0.6B", "1.7B"]
+        model_size: ${{ fromJSON(inputs.model_size == 'both' && '["0.6B","1.7B"]' || format('["{0}"]', inputs.model_size)) }}
     env:
       FF_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
       OMP_NUM_THREADS: "2"
@@ -93,10 +99,15 @@ jobs:
             ref="demo/reference.wav"
             reftext="demo/reference.txt"
           fi
-          python -m scripts.qwen_batch \
-            --model-size "${{ matrix.model_size }}" \
+          if [ "$FF_MODE" = "private" ] && [ "${{ matrix.model_size }}" = "1.7B" ]; then
+            voice_choice=(--profile ff_owner)
+          else
+            voice_choice=(--model-size "${{ matrix.model_size }}")
+          fi
+          python -m scripts.qwen_batch "${voice_choice[@]}" \
             --reference "$ref" --reference-text-file "$reftext" \
             --ru scripts_tmp/ru.txt --en scripts_tmp/en.txt --output-dir out
+          cat out/tts_performance.json >> "$GITHUB_STEP_SUMMARY"
           for lang in ru en; do
             ffmpeg -v error -xerror -i "out/qwen_$lang.wav" -f null -
           done
@@ -123,11 +134,12 @@ jobs:
           if-no-files-found: error
       - name: Upload PUBLIC demonstration only
         if: success() && env.FF_MODE == 'demo'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ff-demo-qwen-${{ matrix.model_size }}
           path: |
             out/*.wav
             out/*.voice.json
+            out/tts_performance.json
           retention-days: 3
           if-no-files-found: error
