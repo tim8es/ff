@@ -39,7 +39,8 @@ the normal semantic QA release gate before presenting it as a finished episode.
 
 When a manifest uses `"tts":{"profile":"ff_owner"}`, select **mode=owner**
 rather than `staged`. Add **only the encrypted voice bundle**
-`.private_voice/reference.bundle` to the *same temporary branch* before
+`.private_voice/reference.bundle` or its Base64-encoded form
+`.private_voice/reference.bundle.b64` to the *same temporary branch* before
 running Actions. The repo secret `FF_VOICE_BUNDLE_KEY` must already exist.
 
 Owner mode: decrypts the authorized reference inside the runner, runs Qwen3
@@ -95,3 +96,6 @@ unless one has been deliberately supplied and mixed. Keep the episode assets
 and semantic QA owned by the chat agent. The production workflow is a
 reproducible, minimal CPU compute and artifact handoff stage, not a complete
 creative replacement.
+
+
+Compact encrypted Opus references are also accepted: the trusted runner decrypts and decodes Opus to temporary PCM WAV before running Qwen3 1.7B. The ciphertext is produced with the same authenticated Fernet key and does **not** expose the sample or transcript in public Git. The full sound output never leaves the runner as plaintext.
