@@ -107,6 +107,33 @@ class ProviderTests(unittest.TestCase):
                 tts.generate("Hello!", Path(directory) / "wrong.wav",
                              provider="kokoro", model_size="1.7B")
 
+    def test_qwen_scene_timeline_receipt_preserves_actual_17b_model(self):
+        import numpy as np
+        import soundfile as sf
+        from scripts.tts_qwen import Qwen3VoiceCloner
+        class FakeModel:
+            def create_voice_clone_prompt(self, **kwargs):
+                return ["test-voice"]
+            def generate_voice_clone(self, **kwargs):
+                x = np.arange(24000 * 2, dtype=np.float32) / 24000
+                return [np.sin(2 * np.pi * 330 * x) * 0.12], 24000
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ref = root / "authorized.wav"
+            sf.write(ref, np.zeros(24000 * 5), 24000)
+            cloner = Qwen3VoiceCloner(
+                ref, "Synthetic reference.", model=FakeModel(), model_size="1.7B")
+            with patch("scripts.tts_qwen.Qwen3VoiceCloner", return_value=cloner):
+                info = tts.generate(
+                    ["Первая фраза.", "Вторая фраза."],
+                    root / "voice.wav", provider="qwen3_clone",
+                    language="ru", reference=ref,
+                    reference_text="Synthetic reference.",
+                    model_size="1.7B", durations=[3.5, 3.5])
+            self.assertEqual(info["model"], "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+            self.assertEqual(info["scene_count"], 2)
+            self.assertTrue((root / "voice.wav").exists())
+
     def test_speech_split(self):
         self.assertEqual(tts.split_sentences("First. Second? Third!"),
                          ["First.", "Second?", "Third!"])
