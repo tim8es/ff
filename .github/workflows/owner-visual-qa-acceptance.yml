@@ -1,0 +1,67 @@
+name: FF visual QA revision with existing encrypted owner audio
+on:
+  push:
+    branches: [feature/actions-mp4-production]
+    paths: ['.github/workflows/owner-visual-qa-acceptance.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  revise:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install visual compositor dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install "Pillow>=10.4,<13" cryptography
+      - name: Download only encrypted owner MP4 from verified run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 41332783058 -n ff-owner-qwen17-mp4-encrypted --dir in
+          test -s in/encrypted_video.bundle
+      - name: Recompose using original Qwen voice with repaired caption geometry
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$FF_VOICE_BUNDLE_KEY"
+          python -m scripts.production unseal --bundle in/encrypted_video.bundle --dest out
+          python -m scripts.episode_package --unpack staging/episode.zip.b64 --output visual
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          a=Path('out/manifest.json').read_bytes()
+          b=Path('visual/manifest.json').read_bytes()
+          assert hashlib.sha256(a).digest()==hashlib.sha256(b).digest(), 'Staged artwork changed'
+          PY
+          python -m scripts.render visual/manifest.json --assets visual/assets --audio out/voice.wav --output out/new.mp4
+          mv out/new.mp4 out/final.mp4
+          python -m scripts.qa out/manifest.json --video out/final.mp4 --voice out/voice.wav --receipt out/voice.voice.json --technical-only --report out/qa.json
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          path=Path('out/handoff.json'); d=json.loads(path.read_text())
+          d['video_sha256']=hashlib.sha256(Path('out/final.mp4').read_bytes()).hexdigest()
+          d['status']='TECHNICAL_PREVIEW_REVIEW_REQUIRED'
+          d['release_ready']=False
+          path.write_text(json.dumps(d,indent=2,ensure_ascii=False))
+          PY
+          python -m scripts.production seal --workspace out --output "$RUNNER_TEMP/encrypted_video.bundle"
+      - name: Delete plaintext and staged visuals before any artifact upload
+        if: always()
+        run: rm -rf out visual in
+      - name: Upload encrypted corrected personal voice MP4
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ff-owner-qwen17-mp4-visual-fix
+          path: ${{ runner.temp }}/encrypted_video.bundle
+          retention-days: 1
+          if-no-files-found: error
