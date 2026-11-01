@@ -6,7 +6,6 @@ trusted local path or environment, never written to the report or logs.
 import argparse
 import json
 import os
-import resource
 from pathlib import Path
 from time import perf_counter
 
@@ -54,7 +53,12 @@ def run_batch(*, model_size=None, profile=None, reference=None,
 
     phases["total_s"] = round(perf_counter() - started, 3)
     # ru_maxrss is KiB on the GitHub-hosted Linux runners.
-    phases["peak_process_rss_mib"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    try:
+        import resource
+        phases["peak_process_rss_mib"] = round(
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except ImportError:
+        phases["peak_process_rss_mib"] = None  # resource unavailable on Windows
     summary = {
         "model": cloner.model_id,
         "profile": profile,
