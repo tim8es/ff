@@ -35,6 +35,9 @@ jobs:
           FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
         run: |
           test -n "$FF_VOICE_BUNDLE_KEY"
+          if [ -s ff_stage/.private_voice/reference.bundle.b64 ]; then
+            base64 --decode ff_stage/.private_voice/reference.bundle.b64 > ff_stage/.private_voice/reference.bundle
+          fi
           test -s ff_stage/.private_voice/reference.bundle
       - uses: actions/setup-python@v6
         with:
