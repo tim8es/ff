@@ -1,6 +1,8 @@
 name: FF neural narration smoke check
 on:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   neural-voice:
     runs-on: ubuntu-latest
