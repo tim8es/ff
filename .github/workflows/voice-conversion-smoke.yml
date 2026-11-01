@@ -13,8 +13,8 @@ jobs:
       TOKENIZERS_PARALLELISM: "false"
       HF_HUB_DISABLE_TELEMETRY: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: System sound dependencies
@@ -39,7 +39,7 @@ jobs:
           done
       - name: Upload synthetic samples only
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ff-chatterbox-synthetic-demo
           path: |
