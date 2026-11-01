@@ -1,9 +1,6 @@
 name: FF neural narration smoke check
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/voice-smoke.yml'
 jobs:
   neural-voice:
     runs-on: ubuntu-latest
