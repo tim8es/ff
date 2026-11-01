@@ -6,6 +6,8 @@ be stored separately in the FF_VOICE_BUNDLE_KEY GitHub Actions secret.
 import argparse
 import io
 import os
+import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -57,6 +59,52 @@ def _decrypt(src, expected, directory, required=None):
         target.mkdir(parents=True, exist_ok=True)
         for name in names:
             (target / name).write_bytes(z.read(name))
+
+
+def unpack_reference(source, destination):
+    """Decrypt an authorized reference; allow compact encrypted Opus transport.
+
+    A compressed reference stays encrypted in Git, and the temporary runner
+    decodes it to WAV before Qwen sees it. Only local ephemeral plaintext.
+    """
+    destination = Path(destination)
+    payload = Path(source).read_bytes()
+    if len(payload) > MAX_BUNDLE_BYTES:
+        raise ValueError("Encrypted reference exceeds size limit")
+    try:
+        decoded = Fernet(_key()).decrypt(payload)
+    except InvalidToken as e:
+        raise ValueError("Wrong key or altered encrypted reference") from e
+    with zipfile.ZipFile(io.BytesIO(decoded)) as z:
+        names = set(z.namelist())
+        variants = [
+            {"reference.wav", "reference.txt"},
+            {"reference.opus", "reference.txt"},
+        ]
+        if len(z.namelist()) != len(names) or names not in variants:
+            raise ValueError("Unexpected entries in encrypted reference")
+        if any(info.file_size > MAX_BUNDLE_BYTES for info in z.infolist()):
+            raise ValueError("Oversized encrypted reference member")
+        destination.mkdir(parents=True, exist_ok=True)
+        transcript = z.read("reference.txt")
+        if not transcript or len(transcript) > 20000:
+            raise ValueError("Reference transcript missing/too large")
+        (destination / "reference.txt").write_bytes(transcript)
+        if "reference.wav" in names:
+            (destination / "reference.wav").write_bytes(z.read("reference.wav"))
+        else:
+            with tempfile.TemporaryDirectory(prefix="ff_ref_") as tmp:
+                src = Path(tmp) / "sample.opus"
+                src.write_bytes(z.read("reference.opus"))
+                subprocess.run([
+                    "ffmpeg", "-v", "error", "-xerror", "-y",
+                    "-i", str(src), "-ar", "24000", "-ac", "1",
+                    "-c:a", "pcm_s16le",
+                    str(destination / "reference.wav"),
+                ], check=True, capture_output=True)
+    from scripts.tts_qwen import validate_reference
+    validate_reference(destination / "reference.wav", transcript.decode("utf8"))
+    return destination
 
 
 def pack(reference, transcript, destination):
