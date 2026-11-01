@@ -56,8 +56,8 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     if voice_mode == "owner":
         if not encrypted_reference:
             raise ValueError("Owner mode requires encrypted voice reference bundle")
-        from scripts.voice_secure import _decrypt, REFERENCE
-        _decrypt(encrypted_reference, set(REFERENCE), workspace / "_private_reference")
+        from scripts.voice_secure import unpack_reference
+        unpack_reference(encrypted_reference, workspace / "_private_reference")
         private = workspace / "_private_reference"
         transcript = (private / "reference.txt").read_text(encoding="utf8")
         from scripts.voice_profiles import resolve_profile
