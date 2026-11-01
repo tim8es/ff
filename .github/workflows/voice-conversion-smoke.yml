@@ -1,11 +1,5 @@
 name: FF - Chatterbox voice conversion (synthetic reference)
 on:
-  push:
-    paths:
-      - "scripts/tts.py"
-      - "scripts/tts_conversion.py"
-      - "scripts/conversion_smoke.py"
-      - ".github/workflows/voice-conversion-smoke.yml"
   workflow_dispatch:
 permissions:
   contents: read
