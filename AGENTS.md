@@ -22,6 +22,10 @@
 - **Private voice assets:** Voice references, reference transcripts, speaker embeddings and cloned personal voice outputs are sensitive biometric-derived data. Never commit them, store in public artifacts or inject into the public repository Actions workflow. Use a trusted private runner or offline environment; get voice owner's permission. A public demo sample is acceptable for functional smoke testing but does not prove likeness or speech quality.
 - **Tool realism:** GitHub contains code and CI but cannot by itself grant network access, run a command in an inaccessible chat container, or create quality narration. Every model may require one-time weight downloads; Edge TTS also requires an online service. Silero's standard models are CC BY-NC (testing permitted, commercial publishing requires additional permission). Always verify each model and voice's license before monetization. Use an available permitted provider or report a blocker. Never present an untested integration as working.
 
+## FF Actions MP4 preview
+
+When the user requests that Qwen3-TTS 1.7B personal narration be integrated into the final MP4, use `scripts.production` and the trusted `.github/workflows/production.yml` with `mode: owner` and a staged `tts.profile: ff_owner` manifest. Both input voice reference and output MP4 are encrypted; never publish private voice audio in a public artifact. Technical-only QA always returns `release_ready: false`; complete visual/audible/factual review separately before calling the video finished. See `docs/mp4-actions.md`. Other narration modes are available for synthetic smoke tests but are not replacements for the authorized owner's voice.
+
 ## Channel art direction
 
 **Brand:** bright, memorable and friendly; premium playful 2D/3D editorial motion, not noisy clickbait. Cohesive across episodes but each fact gets its own expressive subject and fresh scenes.
