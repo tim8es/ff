@@ -82,7 +82,7 @@ def audio_levels(path):
     return {key: float(value) for key, value in matches.items()}
 
 
-def validate(manifest_path, video, voice, receipt, review):
+def validate(manifest_path, video, voice, receipt, review, *, technical_only=False):
     data = json.loads(Path(manifest_path).read_text(encoding="utf8"))
     scenes = verify_script(data)
     total = sum(float(s["duration"]) for s in scenes)
@@ -126,12 +126,14 @@ def validate(manifest_path, video, voice, receipt, review):
                 errors.append("Narration audio does not match receipt")
     else:
         errors.append("Missing neural voice audio or provenance receipt")
+    approved_review = False
     if review:
         judgments = json.loads(Path(review).read_text(encoding="utf8"))
         missing = [key for key in REVIEW_KEYS if judgments.get(key) is not True]
-        if missing:
+        approved_review = not missing
+        if missing and not technical_only:
             errors.append("Unpassed content review: " + ", ".join(missing))
-    else:
+    elif not technical_only:
         errors.append("Semantic and audible review is required")
     metadata = probe(video)
     vs = next((s for s in metadata["streams"]
@@ -166,6 +168,8 @@ def validate(manifest_path, video, voice, receipt, review):
             errors.append("Clipping risk in audio")
     return {
         "passed": not errors, "errors": errors,
+        "technical_only": technical_only,
+        "release_ready": not errors and approved_review and not technical_only,
         "video": str(video), "duration": duration,
         "frames": frames, "audio": levels,
         "review": str(review) if review else None,
@@ -180,8 +184,11 @@ def main():
     p.add_argument("--receipt", type=Path)
     p.add_argument("--review", type=Path)
     p.add_argument("--report", type=Path)
+    p.add_argument("--technical-only", action="store_true",
+                   help="Check codecs/frames/audio/receipt but NEVER approve publication")
     args = p.parse_args()
-    result = validate(args.manifest, args.video, args.voice, args.receipt, args.review)
+    result = validate(args.manifest, args.video, args.voice, args.receipt, args.review,
+                      technical_only=args.technical_only)
     formatted = json.dumps(result, ensure_ascii=False, indent=2)
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
