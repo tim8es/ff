@@ -92,6 +92,34 @@ class ProductionTests(unittest.TestCase):
             self.assertFalse(normal["passed"])
             self.assertIn("Semantic and audible review is required", normal["errors"])
 
+    def test_encrypted_opus_reference_is_decoded_without_leaking_text(self):
+        import subprocess
+        import numpy as np
+        import soundfile as sf
+        from cryptography.fernet import Fernet
+        from scripts.voice_secure import unpack_reference
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wav, opus = root / "fixture.wav", root / "fixture.opus"
+            samples = np.sin(np.arange(24000 * 6) * (2 * np.pi * 220 / 24000))
+            sf.write(wav, samples * 0.1, 24000)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav),
+                            "-c:a", "libopus", "-b:a", "32k", str(opus)],
+                           check=True)
+            exact = "A synthetic speaker is reading a harmless test."
+            with io.BytesIO() as buf:
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr("reference.opus", opus.read_bytes())
+                    archive.writestr("reference.txt", exact)
+                secret = Fernet.generate_key()
+                bundle = root / "encrypted.bundle"
+                bundle.write_bytes(Fernet(secret).encrypt(buf.getvalue()))
+            self.assertNotIn(exact.encode(), bundle.read_bytes())
+            with patch.dict(os.environ, {"FF_VOICE_BUNDLE_KEY": secret.decode()}):
+                dest = unpack_reference(bundle, root / "decoded")
+            self.assertTrue((dest / "reference.wav").is_file())
+            self.assertEqual((dest / "reference.txt").read_text(), exact)
+
     def test_seal_private_hides_derived_video(self):
         try:
             from cryptography.fernet import Fernet
