@@ -1,0 +1,61 @@
+name: FF Actions video preview
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Demo fixture or staged visual episode
+        type: choice
+        required: true
+        default: demo
+        options: [demo, staged]
+      episode_ref:
+        description: Trusted staging branch with staging/episode.zip.b64
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  render:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        if: inputs.mode == 'staged'
+        with:
+          ref: ${{ inputs.episode_ref }}
+          path: ff_stage
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install CPU video and neural speech dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng libsndfile1
+          python -m pip install "Pillow>=10.4,<13" "numpy>=1.26,<3" "soundfile>=0.12,<1" "piper-tts==1.8.0"
+      - name: Build technical review-required MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.mode }}" = demo ]; then
+            python -m scripts.production build --demo --voice-mode piper --workspace out
+          else
+            test -s ff_stage/staging/episode.zip.b64
+            python -m scripts.production build --bundle ff_stage/staging/episode.zip.b64 --voice-mode piper --workspace out
+          fi
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt:format=duration -of json out/final.mp4
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ff-public-video-REVIEW-REQUIRED
+          path: |
+            out/final.mp4
+            out/manifest.json
+            out/voice.voice.json
+            out/qa.json
+            out/handoff.json
+          retention-days: 3
+          if-no-files-found: error
