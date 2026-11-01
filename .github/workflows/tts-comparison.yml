@@ -1,11 +1,5 @@
 name: FF - compare three local TTS engines
 on:
-  push:
-    paths:
-      - "scripts/tts.py"
-      - "scripts/requirements.txt"
-      - "examples/tts_comparison_story.txt"
-      - ".github/workflows/tts-comparison.yml"
   workflow_dispatch:
 permissions:
   contents: read
