@@ -189,6 +189,12 @@ def make_frame(project, scene, local_time, global_time, asset=None):
                           min_size=max(15, int(23*s)))
         caption = scene.get('caption', '')
         if caption:
+            # A fixed editorial scrim keeps captions readable on bright assets.
+            # It is entirely inside the Shorts-safe horizontal text margins.
+            if asset is not None:
+                d.rounded_rectangle(
+                    (int(52*s), int(510*s), int(668*s), int(660*s)),
+                    radius=max(6, int(18*s)), fill='#101C35')
             draw_text_box(d, caption,
                           (int(56*s), int(475*s), int(664*s), int(680*s)),
                           max(18, int(31*s)), muted,

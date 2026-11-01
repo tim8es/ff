@@ -1,0 +1,102 @@
+name: FF Actions video preview
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Demo fixture or staged visual episode
+        type: choice
+        required: true
+        default: demo
+        options: [demo, staged, owner]
+      episode_ref:
+        description: Trusted staging branch with staging/episode.zip.b64
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  render:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        if: inputs.mode != 'demo'
+        with:
+          ref: ${{ inputs.episode_ref }}
+          path: ff_stage
+          persist-credentials: false
+      - name: Check encrypted owner input and secret
+        if: inputs.mode == 'owner'
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          test -n "$FF_VOICE_BUNDLE_KEY"
+          if [ -s ff_stage/.private_voice/reference.bundle.b64 ]; then
+            base64 --decode ff_stage/.private_voice/reference.bundle.b64 > ff_stage/.private_voice/reference.bundle
+          fi
+          test -s ff_stage/.private_voice/reference.bundle
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install CPU video and speech dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng libsndfile1
+          python -m pip install "Pillow>=10.4,<13" "numpy>=1.26,<3" "soundfile>=0.12,<1"
+      - name: Install Piper for public draft
+        if: inputs.mode != 'owner'
+        run: python -m pip install "piper-tts==1.8.0"
+      - name: Install Qwen3 on CPU only for private owner
+        if: inputs.mode == 'owner'
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
+          python -m pip install qwen-tts cryptography
+      - name: Build technical review-required MP4
+        shell: bash
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.mode }}" = demo ]; then
+            python -m scripts.production build --demo --voice-mode piper --workspace out
+          elif [ "${{ inputs.mode }}" = owner ]; then
+            test -s ff_stage/staging/episode.zip.b64
+            python -m scripts.production build --bundle ff_stage/staging/episode.zip.b64 --voice-mode owner \
+              --encrypted-reference ff_stage/.private_voice/reference.bundle --workspace out
+          else
+            test -s ff_stage/staging/episode.zip.b64
+            python -m scripts.production build --bundle ff_stage/staging/episode.zip.b64 --voice-mode piper --workspace out
+          fi
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt:format=duration -of json out/final.mp4
+      - name: Encrypt personal voice and video
+        if: success() && inputs.mode == 'owner'
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: python -m scripts.production seal --workspace out --output encrypted_video.bundle
+      - name: Remove all owner plaintext before any upload
+        if: always() && inputs.mode == 'owner'
+        run: rm -rf out ff_stage
+      - name: Upload encrypted owner MP4 only
+        if: success() && inputs.mode == 'owner'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ff-owner-MP4-REVIEW-REQUIRED
+          path: encrypted_video.bundle
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v5
+        if: success() && inputs.mode != 'owner'
+        with:
+          name: ff-public-video-REVIEW-REQUIRED
+          path: |
+            out/final.mp4
+            out/manifest.json
+            out/voice.voice.json
+            out/qa.json
+            out/handoff.json
+          retention-days: 3
+          if-no-files-found: error
