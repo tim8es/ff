@@ -7,6 +7,7 @@ No personal audio, voice transcript, biometric reference or API keys belong here
 import base64
 import binascii
 import io
+import hashlib
 import json
 import re
 import zipfile
@@ -85,5 +86,44 @@ def verify_assets(root):
             im.verify()
         refs.add(image)
     if len(refs) < 3:
-        raise ValueError("Production requires three genuinely distinct asset files")
+        raise ValueError("Production requires at least three distinct asset files")
+    hashes = {hashlib.sha256((root / "assets" / name).read_bytes()).hexdigest()
+              for name in refs}
+    if len(hashes) < 3:
+        raise ValueError("Production requires three different image contents")
     return manifest
+
+
+def pack(episode_dir, output):
+    """Prepare portable base64 ZIP for a trusted staging branch."""
+    episode_dir = Path(episode_dir)
+    manifest = verify_assets(episode_dir)
+    used = {scene["image"] for scene in manifest["scenes"]}
+    with io.BytesIO() as memory:
+        with zipfile.ZipFile(memory, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            z.write(episode_dir / "manifest.json", "manifest.json")
+            for filename in sorted(used):
+                z.write(episode_dir / "assets" / filename, f"assets/{filename}")
+        data = memory.getvalue()
+    if len(data) > MAX_ZIP_BYTES:
+        raise ValueError("Episode package too large; compress art assets")
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(base64.b64encode(data))
+    return output
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--pack", type=Path, help="Episode directory containing manifest.json + assets")
+    group.add_argument("--unpack", type=Path, help="A staged .zip.b64 file")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    out = pack(args.pack, args.output) if args.pack else unpack(args.unpack, args.output)
+    print(out)
+
+
+if __name__ == "__main__":
+    main()
