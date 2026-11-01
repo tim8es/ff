@@ -30,7 +30,7 @@ class QwenBatchTests(unittest.TestCase):
             calls = []
             def fake_generate(text, output, **kw):
                 calls.append((text, Path(output).name, kw))
-                return {"duration": 5.0}
+                return {"duration": 5.0, "audio_sha256": "a"*64}
             printed = io.StringIO()
             with patch("scripts.qwen_batch.Qwen3VoiceCloner", FakeCloner):
                 with patch("scripts.qwen_batch.generate", fake_generate):
