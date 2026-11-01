@@ -19,3 +19,12 @@
 - The private workflow must refuse missing encrypted inputs before large dependency installation; any private artifacts remain encrypted.
 
 These changes optimize run count and avoid redundant model loading, but **do not** mean a full episode MP4 production workflow already exists. The FF content pipeline's visual generation and human/agent QA remain separate release gates.
+
+
+## Primary voice and CPU metrics (November 2026)
+
+The built-in `ff_owner` profile selects Qwen3-TTS 1.7B Base for both Russian and English, without embedding private voice data in the repository. Set `tts.profile: ff_owner` or `--profile ff_owner`; pass authorized reference and transcript via `FF_VOICE_REFERENCE` and `FF_VOICE_TRANSCRIPT_FILE`. Explicit mismatched model/provider selection is rejected.
+
+`scripts.qwen_batch` now records timings for model loading (including cold downloads), reference conditioning, Russian synthesis, English synthesis, total time and peak Linux RSS in `tts_performance.json`. Avoid interpreting model load time as weight-download time alone. The report is encrypted with personal voice outputs; public demo reports are safe to share.
+
+The lightweight CI runner is pinned to `ubuntu-24.04` while we validate FFmpeg installation speed; do not assume FFmpeg is preinstalled. Compare actual Actions timing rather than promising a fixed speedup.
