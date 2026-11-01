@@ -1,16 +1,15 @@
 name: FF neural narration smoke check
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/voice-smoke.yml'
+permissions:
+  contents: read
 jobs:
   neural-voice:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg

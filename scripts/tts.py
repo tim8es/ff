@@ -145,7 +145,8 @@ def speech(text, provider, language, voice, target, *, cloner=None, converter=No
 
 
 def generate(text, output, *, provider, language="en", voice=None, durations=None,
-             reference=None, reference_text=None, voice_conversion=None, model_size=None):
+             reference=None, reference_text=None, voice_conversion=None, model_size=None,
+             _cloner=None):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
@@ -159,7 +160,22 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         if selected != "reference":
             raise ValueError("qwen3_clone uses a voice reference, not a preset name")
         from scripts.tts_qwen import Qwen3VoiceCloner
-        cloner = Qwen3VoiceCloner(reference, reference_text, model_size=model_size or "0.6B")
+        if _cloner is None:
+            cloner = Qwen3VoiceCloner(reference, reference_text, model_size=model_size or "0.6B")
+        else:
+            # Internal batch reuse: reference and model must remain identical.
+            if reference is None or reference_text is None:
+                raise ValueError("A batch cloner requires the matching reference and transcript")
+            from scripts.tts_qwen import SUPPORTED_MODEL_SIZES, validate_reference
+            checked = validate_reference(reference, reference_text)
+            expected = SUPPORTED_MODEL_SIZES.get(model_size or "0.6B")
+            if (expected is None or _cloner.model_id != expected
+                    or checked.resolve() != _cloner.reference.resolve()
+                    or reference_text.strip() != _cloner.reference_text):
+                raise ValueError("Batch cloner identity/model/reference mismatch")
+            cloner = _cloner
+    elif _cloner is not None:
+        raise ValueError("Batch cloner requires the qwen3_clone provider")
     elif model_size is not None:
         raise ValueError("Model size selection is only supported by qwen3_clone")
     elif voice_conversion == "chatterbox":

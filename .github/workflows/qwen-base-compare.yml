@@ -1,8 +1,5 @@
 name: FF - Qwen3 Base 0.6B vs 1.7B (GitHub CPU)
 on:
-  push:
-    paths:
-      - ".github/workflows/qwen-base-compare.yml"
   workflow_dispatch:
     inputs:
       mode:
@@ -30,8 +27,15 @@ jobs:
       TOKENIZERS_PARALLELISM: "false"
       HF_HUB_DISABLE_TELEMETRY: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - name: Validate private input before expensive dependencies
+        if: env.FF_MODE == 'private'
+        env:
+          FF_VOICE_BUNDLE_KEY: ${{ secrets.FF_VOICE_BUNDLE_KEY }}
+        run: |
+          test -n "$FF_VOICE_BUNDLE_KEY" || { echo "FF_VOICE_BUNDLE_KEY secret missing"; exit 1; }
+          test -s .private_voice/reference.bundle || { echo "Encrypted reference.bundle missing"; exit 1; }
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install speech runtime (CPU; no paid API)
@@ -89,11 +93,11 @@ jobs:
             ref="demo/reference.wav"
             reftext="demo/reference.txt"
           fi
+          python -m scripts.qwen_batch \
+            --model-size "${{ matrix.model_size }}" \
+            --reference "$ref" --reference-text-file "$reftext" \
+            --ru scripts_tmp/ru.txt --en scripts_tmp/en.txt --output-dir out
           for lang in ru en; do
-            python -m scripts.tts --provider qwen3_clone \
-              --model-size "${{ matrix.model_size }}" --language "$lang" \
-              --reference "$ref" --reference-text-file "$reftext" \
-              --text-file "scripts_tmp/$lang.txt" --output "out/qwen_$lang.wav"
             ffmpeg -v error -xerror -i "out/qwen_$lang.wav" -f null -
           done
       - name: Encrypt private cloned outputs before artifact upload
@@ -111,7 +115,7 @@ jobs:
           if [ "$FF_MODE" = "private" ]; then rm -rf out; fi
       - name: Upload PRIVATE encrypted output only (no raw WAV)
         if: success() && env.FF_MODE == 'private'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ff-private-qwen-${{ matrix.model_size }}
           path: encrypted_result.bundle

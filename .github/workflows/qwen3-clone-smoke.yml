@@ -1,11 +1,6 @@
 name: FF - Qwen3 public demo clone smoke
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "scripts/tts_qwen.py"
-      - "scripts/tts.py"
-      - ".github/workflows/qwen3-clone-smoke.yml"
 permissions:
   contents: read
 jobs:
@@ -13,17 +8,13 @@ jobs:
     # NEVER supply a private voice file to this public-repository workflow.
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        lang: [en, ru]
     env:
       OMP_NUM_THREADS: "4"
       TOKENIZERS_PARALLELISM: "false"
       HF_HUB_DISABLE_TELEMETRY: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install CPU audio dependencies
@@ -48,13 +39,17 @@ jobs:
           PY
       - name: Synthesize cloned speech in English and Russian
         run: |
-          python -m scripts.tts --provider qwen3_clone --language "${{ matrix.lang }}" --reference demo/public_reference.wav --reference-text-file demo/ref.txt --text-file "demo/${{ matrix.lang }}.txt" --output "out/qwen3_${{ matrix.lang }}.wav"
-          ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "out/qwen3_${{ matrix.lang }}.wav"
+          python -m scripts.qwen_batch --model-size 0.6B \
+            --reference demo/public_reference.wav --reference-text-file demo/ref.txt \
+            --ru demo/ru.txt --en demo/en.txt --output-dir out
+          for lang in ru en; do
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels:format=duration -of json "out/qwen_$lang.wav"
+          done
       - name: Upload ONLY synthesized demo speech, never reference audio
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: qwen3-public-demo-${{ matrix.lang }}
+          name: qwen3-public-demo-bilingual
           path: |
             out/*.wav
             out/*.voice.json
