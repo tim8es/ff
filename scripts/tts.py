@@ -209,7 +209,7 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
             raw = tmp / "aligned.wav"
             compose_timeline(fragments, durations, raw)
             transcript = "\n".join(t.strip() for t in text)
-            model_id = selected
+            model_id = cloner.model_id if cloner is not None else selected
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                         "-i", str(raw), "-af", "loudnorm=I=-16:TP=-1.5:LRA=9",
                         "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", str(output)],
