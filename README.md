@@ -38,7 +38,7 @@ For Qwen3 0.6B vs 1.7B benchmarks on the **FF GitHub Actions** runner, see [Acti
 
 ## MP4 from GitHub Actions
 
-For an actual vertical MP4 assembled on GitHub-hosted CPU with the **FF owner voice (Qwen3-TTS 1.7B Base)**, use the [Actions MP4 preview workflow](.github/workflows/production.yml) and [staging instructions](docs/mp4-actions.md). Owner-voice video and narration are encrypted in public Actions artifacts. Technical previews are explicitly **not** publication-approved until semantic and visual QA is completed.
+For an actual vertical MP4 assembled on GitHub-hosted CPU with the **FF owner voice (Qwen3-TTS 1.7B Base)**, use the [Actions MP4 preview workflow](.github/workflows/production.yml) and [staging instructions](docs/production-actions.md). Owner-voice video and narration are encrypted in public Actions artifacts. Technical previews are explicitly **not** publication-approved until semantic and visual QA is completed.
 
 ## Local fallback and tests
 
