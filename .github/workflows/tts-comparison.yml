@@ -16,8 +16,8 @@ jobs:
       OPENBLAS_NUM_THREADS: "2"
       TOKENIZERS_PARALLELISM: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install FFmpeg and phoneme backend
@@ -68,7 +68,7 @@ jobs:
           fi
       - name: Save WAV and metadata even when a synthesis step fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tts-comparison-${{ matrix.provider }}
           path: |
