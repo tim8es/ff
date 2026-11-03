@@ -61,10 +61,20 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         from scripts.voice_secure import unpack_reference
         unpack_reference(encrypted_reference, workspace / "_private_reference")
         private = workspace / "_private_reference"
-        # Preserve original private WAV. Clean it mildly only in ephemeral runner storage.
+        # Voice stays in ephemeral storage. Keep conservative cleaning as the
+        # default; explicit fan presets are chosen only after comparison.
         from scripts.audio_improve import prepare_recording
-        clean_ref = private / "reference_prepared.wav"
-        prepare_recording(private / "reference.wav", clean_ref, strength=0.55)
+        cleanup = tts.get("reference_preprocessing", "conservative")
+        if cleanup not in ("none", "conservative", "fan", "fan_strong"):
+            raise ValueError("Unknown private voice reference preprocessing preset")
+        clean_ref = private / "reference.wav"
+        if cleanup != "none":
+            clean_ref = private / "reference_prepared.wav"
+            prepare_recording(
+                private / "reference.wav", clean_ref,
+                strength=0.55, preset=cleanup,
+                fan_notch_hz=tts.get("fan_notch_hz"),
+                fan_strength=tts.get("fan_strength", .75))
         transcript = (private / "reference.txt").read_text(encoding="utf8")
         from scripts.voice_profiles import resolve_profile
         profile = resolve_profile("ff_owner", language=language)
