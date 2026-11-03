@@ -95,3 +95,25 @@ actual narrative quality or guarantee retention. Human QA is still mandatory.
 Use the original 31-second iPhone recording to compare cleaning/montage.
 A new, longer recording will allow testing multiple distinct 15–25 s
 references. **Do not make model 1.7B larger just for a perceived improvement.**
+
+## Air-purifier / fan noise: dedicated opt-in preset
+
+The mild `soft_denoise` is still the FF default. For a stationary air purifier, listen to `fan` and `fan_strong` separately. The new `scripts.audio_fan.fan_reduce` performs high-pass filtering, an **optional narrow notch at a measured appliance tone**, stationary room-tone noise suppression, and (only with `fan_strong`) a soft, smoothed expander for the quietest frames. It does **not** replace Qwen3 TTS or train a new voice.
+
+To reproduce the iPhone recording test (the 894 Hz tone was measured **on this recording**, not a universal fan frequency):
+
+```bash
+python -m scripts.audio_improve "/private/iphone.m4a" "/private/fan_balanced.wav" \
+  --start 1.08 --duration 29.6 --preset fan \
+  --noise-start 0 --noise-duration 0.73 --fan-notch-hz 894
+
+python -m scripts.audio_improve "/private/iphone.m4a" "/private/fan_strong.wav" \
+  --start 1.08 --duration 29.6 --preset fan_strong \
+  --noise-start 0 --noise-duration 0.73 --fan-notch-hz 894
+```
+
+If the original recording starts directly with speech, omit `--noise-start/--noise-duration`: the software selects the quietest 220 ms windows for its noise estimate, which is less precise and must be auditioned. If no narrow frequency peak has been measured, **omit** `--fan-notch-hz`; don't blindly remove 894 Hz from other voices. Typical fan strengths: `--fan-strength 0.65–0.85`. Noise suppression during speech and audible distortion cannot both be optimized perfectly.
+
+A new private episode can select `"tts": {"profile":"ff_owner","reference_preprocessing":"fan","fan_notch_hz":894}`. This setting is opt-in; the historical default `conservative` is unchanged. For a professionally cleaned reference set `reference_preprocessing: "none"` to avoid double filtering. The voice remains ephemeral in the trusted runner, and MP4/voice artifacts must stay encrypted. **Never use an encryption key exposed in public Git history; rotate it before cloning.**
+
+Verify: at equal listening level compare natural vowels, sibilants, plosives and fan tone **during speech**, not only quiet pauses. A silent background can conceal degraded voice identity; Qwen A/B with the same exact transcript is the acceptance test.

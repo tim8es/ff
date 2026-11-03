@@ -62,8 +62,17 @@ def soft_denoise(data, sr, strength=0.55):
 
 
 def prepare_recording(source, output, *, strength=.55, sample_rate=24000,
-                      start=0.0, duration=None):
-    original,sr = mono_wav(source,sample_rate)
+                      start=0.0, duration=None, preset="conservative",
+                      noise_start=None, noise_duration=None,
+                      fan_notch_hz=None, fan_strength=.75):
+    whole,sr = mono_wav(source,sample_rate)
+    if preset not in ("conservative", "fan", "fan_strong"):
+        raise ValueError("Unknown noise reduction preset")
+    if (noise_start is None) != (noise_duration is None):
+        raise ValueError("Specify both noise_start and noise_duration")
+    if noise_start is not None and (noise_start < 0 or noise_duration < .30):
+        raise ValueError("Room tone requires start >= 0 and >=0.3 seconds")
+    original = whole
     if start < 0 or (duration is not None and duration <= 0):
         raise ValueError("start must be nonnegative and duration positive")
     left=round(sr*start)
@@ -71,7 +80,20 @@ def prepare_recording(source, output, *, strength=.55, sample_rate=24000,
     if left>=len(original) or right>len(original)+round(.01*sr):
         raise ValueError("Requested reference window exceeds recording")
     original=original[left:min(len(original),right)]
-    cleaned = soft_denoise(original,sr,strength)
+    if preset == "conservative":
+        cleaned = soft_denoise(original,sr,strength)
+    else:
+        from scripts.audio_fan import fan_reduce
+        noise = None
+        if noise_start is not None:
+            n1 = round(sr * noise_start)
+            n2 = round(sr * (noise_start + noise_duration))
+            if n2 > len(whole):
+                raise ValueError("Room tone window exceeds recording")
+            noise = whole[n1:n2]
+        cleaned = fan_reduce(original, sr, noise_audio=noise,
+                             strength=fan_strength, notch_hz=fan_notch_hz,
+                             strong=(preset == "fan_strong"))
     output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
     sf.write(output,cleaned,sr,subtype='PCM_16')
     metrics={
@@ -83,7 +105,10 @@ def prepare_recording(source, output, *, strength=.55, sample_rate=24000,
       'raw_rms_dbfs':round(float(20*np.log10(np.sqrt(np.mean(original**2))+1e-12)),2),
       'cleaned_rms_dbfs':round(float(20*np.log10(np.sqrt(np.mean(cleaned**2))+1e-12)),2),
       'peak_dbfs':round(float(20*np.log10(np.max(np.abs(cleaned))+1e-12)),2),
-      'algorithm':'conservative bandpass + smoothed spectral suppression',
+      'algorithm': ('conservative bandpass + smoothed spectral suppression'
+                    if preset == "conservative" else
+                    "fan-aware highpass + optional tone notch + stationary spectral filtering"),
+      'preset':preset,
       'warning':'Speech reconstruction and room reverberation are not guaranteed.',
     }
     return metrics
@@ -149,8 +174,19 @@ def main():
                    help="Start of an exact 3-30 second transcript-matched reference window")
     p.add_argument('--duration',type=float,default=None,
                    help="Duration of the reference window; Qwen3 accepts at most 30 seconds")
+    p.add_argument('--preset',choices=('conservative','fan','fan_strong'),
+                   default='conservative')
+    p.add_argument('--noise-start',type=float,default=None,
+                   help="Start of a speech-free room-tone region in the SOURCE recording")
+    p.add_argument('--noise-duration',type=float,default=None)
+    p.add_argument('--fan-notch-hz',type=float,default=None,
+                   help="Optional measured stationary narrow fan tone, e.g. 894")
+    p.add_argument('--fan-strength',type=float,default=.75)
     args=p.parse_args()
-    print(json.dumps(prepare_recording(args.source,args.output,strength=args.strength,
-                                       start=args.start,duration=args.duration),indent=2))
+    print(json.dumps(prepare_recording(
+        args.source,args.output,strength=args.strength,start=args.start,
+        duration=args.duration,preset=args.preset,noise_start=args.noise_start,
+        noise_duration=args.noise_duration,fan_notch_hz=args.fan_notch_hz,
+        fan_strength=args.fan_strength),indent=2))
 
 if __name__=='__main__':main()
