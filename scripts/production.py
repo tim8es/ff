@@ -39,7 +39,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     verify_assets(workspace)
     manifest_path = workspace / "manifest.json"
     manifest = load_project(manifest_path)
-    if manifest.get("editorial"):
+    if manifest.get("editorial") or voice_mode == "owner":
         from scripts.story_contract import validate_story
         validate_story(manifest)
     tts = manifest.get("tts", {})
@@ -63,12 +63,25 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         unpack_reference(encrypted_reference, workspace / "_private_reference")
         private = workspace / "_private_reference"
         transcript = (private / "reference.txt").read_text(encoding="utf8")
+        preparation = tts.get("reference_preprocessing", "conservative")
+        if preparation not in ("conservative", "none"):
+            raise ValueError("Unknown voice reference preprocessing mode")
+        reference_file = private / "reference.wav"
+        if preparation == "conservative":
+            import soundfile as sf
+            from scripts.audio_refine import denoise_reference
+            samples, rate = sf.read(reference_file, dtype="float32")
+            cleaned, ref_report = denoise_reference(samples, rate, reduction=0.5)
+            reference_file = private / "reference_prepared.wav"
+            sf.write(reference_file, cleaned, rate, subtype="PCM_16")
+        else:
+            ref_report = {"mode": "none"}
         from scripts.voice_profiles import resolve_profile
         profile = resolve_profile("ff_owner", language=language)
         receipt = generate(
             narration, audio, provider=profile["provider"],
             model_size=profile["model_size"], language=language,
-            durations=durations, reference=private / "reference.wav",
+            durations=durations, reference=reference_file,
             reference_text=transcript, pacing="tight")
     elif voice_mode == "piper":
         # Public smoke/draft only: no implicit impersonation of the FF owner.
@@ -103,6 +116,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         "voice_sha256": receipt["audio_sha256"],
         "pacing": "speech_driven",
         "scene_durations": measured,
+        "reference_preprocessing": ref_report if voice_mode == "owner" else None,
         "duration": qa["duration"],
         "qa_passed_technical": True,
         "required_review": (
