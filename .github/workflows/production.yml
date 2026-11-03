@@ -46,7 +46,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg espeak-ng libsndfile1
-          python -m pip install "Pillow>=10.4,<13" "numpy>=1.26,<3" "soundfile>=0.12,<1"
+          python -m pip install "Pillow>=10.4,<13" "numpy>=1.26,<3" "soundfile>=0.12,<1" "scipy>=1.11,<2"
       - name: Install Piper for public draft
         if: inputs.mode != 'owner'
         run: python -m pip install "piper-tts==1.8.0"
@@ -54,7 +54,7 @@ jobs:
         if: inputs.mode == 'owner'
         run: |
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 torchaudio==2.8.0
-          python -m pip install qwen-tts cryptography
+          python -m pip install qwen-tts cryptography "noisereduce>=3,<4"
       - name: Build technical review-required MP4
         shell: bash
         env:
