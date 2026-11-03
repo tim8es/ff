@@ -1,6 +1,10 @@
 """Fan preset regression tests use entirely synthetic speech and appliance noise."""
+import tempfile
 import unittest
+from pathlib import Path
 import numpy as np
+import soundfile as sf
+from scripts.audio_improve import prepare_recording
 from scripts.audio_fan import fan_reduce
 
 class FanCleaningTests(unittest.TestCase):
@@ -33,6 +37,23 @@ class FanCleaningTests(unittest.TestCase):
         active=slice(self.sr*2,self.sr*4)
         def ratio(y):return np.sqrt(np.mean(y[:self.sr]**2))/np.sqrt(np.mean(y[active]**2))
         self.assertLess(ratio(strong),ratio(mild)*.75)
+
+    def test_refine_cli_pipeline_uses_room_noise_outside_chosen_reference(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            source=root/"iphone_sample.wav"
+            output=root/"reference_clean.wav"
+            sf.write(source,self.noisy,self.sr)
+            info=prepare_recording(
+                source,output,start=1.0,duration=4.0,
+                preset="fan",noise_start=0.0,noise_duration=.75,
+                fan_notch_hz=894)
+            data,rate=sf.read(output)
+            self.assertEqual(info["preset"],"fan")
+            self.assertEqual(rate,self.sr)
+            self.assertAlmostEqual(len(data)/rate,4.0,places=3)
+            self.assertTrue(np.isfinite(data).all())
+            self.assertLess(np.max(abs(data)),.75)
 
     def test_notch_out_of_voice_band_and_short_noise_rejected(self):
         with self.assertRaisesRegex(ValueError,'Fan tone'):
