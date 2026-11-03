@@ -39,6 +39,8 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     verify_assets(workspace)
     manifest_path = workspace / "manifest.json"
     manifest = load_project(manifest_path)
+    from scripts.story_arc import validate_story_arc
+    story_contract = validate_story_arc(manifest)
     tts = manifest.get("tts", {})
     if voice_mode == "owner":
         if tts.get("profile") != "ff_owner":
@@ -113,6 +115,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         "voice_reference_preparation": ("conservative spectral cleaning"
                                         if voice_mode == "owner" else None),
         "scene_pacing": "adaptive_speech_duration_70_120ms",
+        "story_structure": story_contract,
         "required_review": (
             "speech_understandable", "facts_verified", "motion_matches_narration",
             "no_visual_artifacts", "text_inside_safe_areas",
