@@ -120,6 +120,34 @@ class ProductionTests(unittest.TestCase):
             self.assertTrue((dest / "reference.wav").is_file())
             self.assertEqual((dest / "reference.txt").read_text(), exact)
 
+    def test_adaptive_scene_timings_reach_renderer_and_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "draft"
+            # Demo fixture bypasses editorial arc only because it is test-only.
+            fake_receipt = {
+                "engine": "piper", "audio_sha256": "1" * 64,
+                "scene_durations": [2.35, 2.40, 2.45, 2.35, 2.55],
+            }
+            rendered = []
+            def fake_render(manifest, asset_dir, output, *, audio):
+                rendered.append([s["duration"] for s in manifest["scenes"]])
+                Path(output).write_bytes(b"synthetic-render-output")
+            with patch("scripts.production.generate", return_value=fake_receipt) as generate:
+                with patch("scripts.production.render_video", side_effect=fake_render):
+                    with patch("scripts.production.validate", return_value={
+                        "passed": True, "release_ready": False, "duration": 12.1,
+                        "errors": [],
+                    }):
+                        handoff = production.build(workspace=root, demo=True)
+            self.assertTrue(generate.call_args.kwargs["adaptive_pacing"])
+            self.assertEqual(rendered[0], fake_receipt["scene_durations"])
+            actual = json.loads((root / "manifest.json").read_text(encoding="utf8"))
+            self.assertEqual([v["duration"] for v in actual["scenes"]],
+                             fake_receipt["scene_durations"])
+            self.assertFalse(handoff["release_ready"])
+            self.assertEqual(handoff["scene_pacing"],
+                             "adaptive_speech_duration_70_120ms")
+
     def test_seal_private_hides_derived_video(self):
         try:
             from cryptography.fernet import Fernet

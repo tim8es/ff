@@ -39,6 +39,8 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     verify_assets(workspace)
     manifest_path = workspace / "manifest.json"
     manifest = load_project(manifest_path)
+    from scripts.story_arc import validate_story_arc
+    story_contract = validate_story_arc(manifest)
     tts = manifest.get("tts", {})
     if voice_mode == "owner":
         if tts.get("profile") != "ff_owner":
@@ -59,22 +61,39 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         from scripts.voice_secure import unpack_reference
         unpack_reference(encrypted_reference, workspace / "_private_reference")
         private = workspace / "_private_reference"
+        # Preserve original private WAV. Clean it mildly only in ephemeral runner storage.
+        from scripts.audio_improve import prepare_recording
+        clean_ref = private / "reference_prepared.wav"
+        prepare_recording(private / "reference.wav", clean_ref, strength=0.55)
         transcript = (private / "reference.txt").read_text(encoding="utf8")
         from scripts.voice_profiles import resolve_profile
         profile = resolve_profile("ff_owner", language=language)
         receipt = generate(
             narration, audio, provider=profile["provider"],
             model_size=profile["model_size"], language=language,
-            durations=durations, reference=private / "reference.wav",
-            reference_text=transcript)
+            durations=durations, reference=clean_ref,
+            reference_text=transcript, adaptive_pacing=True)
     elif voice_mode == "piper":
         # Public smoke/draft only: no implicit impersonation of the FF owner.
         receipt = generate(
             narration, audio, provider="piper",
-            language=language, durations=durations)
+            language=language, durations=durations, adaptive_pacing=True)
     else:
         raise ValueError("Unknown production voice_mode")
 
+    # Real TTS timing is authoritative: do not pad scene endings with seconds of silence.
+    effective = receipt.get("scene_durations")
+    if effective is not None:
+        if len(effective) != len(manifest["scenes"]):
+            raise ValueError("Speech timing does not match scene count")
+        for scene, seconds in zip(manifest["scenes"], effective):
+            if not 0.3 <= seconds <= 30:
+                raise ValueError("Adaptive scene exceeds supported duration")
+            scene["duration"] = seconds
+        if sum(effective) > 180:
+            raise ValueError("Voice is too long for Shorts scene timeline")
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
+                                 encoding="utf8")
     mp4 = workspace / "final.mp4"
     render_video(manifest, workspace / "assets", mp4, audio=audio)
     qa = validate(manifest_path, mp4, audio, audio.with_suffix(".voice.json"),
@@ -93,6 +112,10 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         "voice_sha256": receipt["audio_sha256"],
         "duration": qa["duration"],
         "qa_passed_technical": True,
+        "voice_reference_preparation": ("conservative spectral cleaning"
+                                        if voice_mode == "owner" else None),
+        "scene_pacing": "adaptive_speech_duration_70_120ms",
+        "story_structure": story_contract,
         "required_review": (
             "speech_understandable", "facts_verified", "motion_matches_narration",
             "no_visual_artifacts", "text_inside_safe_areas",

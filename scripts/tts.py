@@ -147,7 +147,7 @@ def speech(text, provider, language, voice, target, *, cloner=None, converter=No
 
 def generate(text, output, *, provider, language="en", voice=None, durations=None,
              reference=None, reference_text=None, voice_conversion=None, model_size=None,
-             _cloner=None):
+             _cloner=None, adaptive_pacing=False):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
     selected = resolve_voice(provider, language, voice)
@@ -188,6 +188,8 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         converter = ChatterboxVoiceConverter(reference)
     elif reference is not None or reference_text is not None:
         raise ValueError("Reference audio is only valid for a cloning provider")
+    if adaptive_pacing and durations is None:
+        raise ValueError("Adaptive pacing requires scene narrations and durations")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ff_tts_") as directory:
@@ -207,7 +209,26 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
                        cloner=cloner, converter=converter)
                 fragments.append(target)
             raw = tmp / "aligned.wav"
-            compose_timeline(fragments, durations, raw)
+            effective_durations = None
+            if adaptive_pacing:
+                import math
+                import numpy as np
+                import soundfile as sf
+                from scipy.signal import resample_poly
+                from scripts.audio_improve import compose_paced
+                sounds = []
+                for path in fragments:
+                    signal, sr = sf.read(path, dtype="float32")
+                    if signal.ndim > 1:
+                        signal = signal.mean(axis=1)
+                    if sr != 48000:
+                        gcd = math.gcd(sr, 48000)
+                        signal = resample_poly(signal, 48000 // gcd, sr // gcd)
+                    sounds.append(np.asarray(signal, dtype=np.float32))
+                joined, effective_durations = compose_paced(sounds, rate=48000)
+                sf.write(raw, joined, 48000, subtype="PCM_16")
+            else:
+                compose_timeline(fragments, durations, raw)
             transcript = "\n".join(t.strip() for t in text)
             model_id = cloner.model_id if cloner is not None else selected
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -233,6 +254,9 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
     if durations is not None:
         metadata["scene_count"] = len(text)
         metadata["script_sha256"] = script_hash([{"narration": s} for s in text])
+        if adaptive_pacing:
+            metadata["scene_durations"] = [round(v, 6) for v in effective_durations]
+            metadata["edit_policy"] = "soft endpoint trim, 70-120ms transitions, no time stretching"
     output.with_suffix(".voice.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf8")
     return metadata
