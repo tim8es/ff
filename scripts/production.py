@@ -39,6 +39,9 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     verify_assets(workspace)
     manifest_path = workspace / "manifest.json"
     manifest = load_project(manifest_path)
+    if manifest.get("editorial"):
+        from scripts.story_contract import validate_story
+        validate_story(manifest)
     tts = manifest.get("tts", {})
     if voice_mode == "owner":
         if tts.get("profile") != "ff_owner":
@@ -66,15 +69,22 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
             narration, audio, provider=profile["provider"],
             model_size=profile["model_size"], language=language,
             durations=durations, reference=private / "reference.wav",
-            reference_text=transcript)
+            reference_text=transcript, pacing="tight")
     elif voice_mode == "piper":
         # Public smoke/draft only: no implicit impersonation of the FF owner.
         receipt = generate(
             narration, audio, provider="piper",
-            language=language, durations=durations)
+            language=language, durations=durations, pacing="tight")
     else:
         raise ValueError("Unknown production voice_mode")
 
+    measured = receipt.get("scene_durations")
+    if measured is None or len(measured) != len(manifest["scenes"]):
+        raise RuntimeError("Tight narration pacing requires measured scene durations")
+    for scene, seconds in zip(manifest["scenes"], measured):
+        scene["duration"] = float(seconds)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
+                             encoding="utf8")
     mp4 = workspace / "final.mp4"
     render_video(manifest, workspace / "assets", mp4, audio=audio)
     qa = validate(manifest_path, mp4, audio, audio.with_suffix(".voice.json"),
@@ -91,6 +101,8 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         "language": language,
         "video_sha256": hashlib.sha256(mp4.read_bytes()).hexdigest(),
         "voice_sha256": receipt["audio_sha256"],
+        "pacing": "speech_driven",
+        "scene_durations": measured,
         "duration": qa["duration"],
         "qa_passed_technical": True,
         "required_review": (
