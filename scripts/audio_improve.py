@@ -61,8 +61,16 @@ def soft_denoise(data, sr, strength=0.55):
     return np.asarray(out*factor,dtype=np.float32)
 
 
-def prepare_recording(source, output, *, strength=.55, sample_rate=24000):
+def prepare_recording(source, output, *, strength=.55, sample_rate=24000,
+                      start=0.0, duration=None):
     original,sr = mono_wav(source,sample_rate)
+    if start < 0 or (duration is not None and duration <= 0):
+        raise ValueError("start must be nonnegative and duration positive")
+    left=round(sr*start)
+    right=(round(sr*(start+duration)) if duration is not None else len(original))
+    if left>=len(original) or right>len(original)+round(.01*sr):
+        raise ValueError("Requested reference window exceeds recording")
+    original=original[left:min(len(original),right)]
     cleaned = soft_denoise(original,sr,strength)
     output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
     sf.write(output,cleaned,sr,subtype='PCM_16')
@@ -70,6 +78,7 @@ def prepare_recording(source, output, *, strength=.55, sample_rate=24000):
       'source_duration_s':round(len(original)/sr,3),
       'output_duration_s':round(len(cleaned)/sr,3),
       'sample_rate':sr,
+      'start_seconds':start,
       'strength':strength,
       'raw_rms_dbfs':round(float(20*np.log10(np.sqrt(np.mean(original**2))+1e-12)),2),
       'cleaned_rms_dbfs':round(float(20*np.log10(np.sqrt(np.mean(cleaned**2))+1e-12)),2),
@@ -136,7 +145,12 @@ def main():
     p.add_argument('source',type=Path)
     p.add_argument('output',type=Path)
     p.add_argument('--strength',type=float,default=.55)
+    p.add_argument('--start',type=float,default=0.0,
+                   help="Start of an exact 3-30 second transcript-matched reference window")
+    p.add_argument('--duration',type=float,default=None,
+                   help="Duration of the reference window; Qwen3 accepts at most 30 seconds")
     args=p.parse_args()
-    print(json.dumps(prepare_recording(args.source,args.output,strength=args.strength),indent=2))
+    print(json.dumps(prepare_recording(args.source,args.output,strength=args.strength,
+                                       start=args.start,duration=args.duration),indent=2))
 
 if __name__=='__main__':main()
