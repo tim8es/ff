@@ -18,3 +18,11 @@
 /__pycache__/
 .pytest_cache/
 .venv/
+
+# Guard against committing local voice credentials and raw biometric data.
+/.private_voice/*
+!/.private_voice/README.md
+/**/FF_VOICE_BUNDLE_KEY*
+/*.ref.txt
+/ff_voice_processed/
+/ff_voice_reference/
