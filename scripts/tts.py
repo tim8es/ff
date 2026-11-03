@@ -147,9 +147,11 @@ def speech(text, provider, language, voice, target, *, cloner=None, converter=No
 
 def generate(text, output, *, provider, language="en", voice=None, durations=None,
              reference=None, reference_text=None, voice_conversion=None, model_size=None,
-             _cloner=None):
+             _cloner=None, pacing="fixed"):
     from scripts.voice import compose_timeline, media_duration, script_hash
     provider = provider.lower()
+    if pacing not in ("fixed", "tight"):
+        raise ValueError("Unsupported pacing mode")
     selected = resolve_voice(provider, language, voice)
     cloner = None
     converter = None
@@ -190,6 +192,8 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
         raise ValueError("Reference audio is only valid for a cloning provider")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
+    scene_durations = None
+    pacing_details = None
     with tempfile.TemporaryDirectory(prefix="ff_tts_") as directory:
         tmp = Path(directory)
         if durations is None:
@@ -207,7 +211,11 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
                        cloner=cloner, converter=converter)
                 fragments.append(target)
             raw = tmp / "aligned.wav"
-            compose_timeline(fragments, durations, raw)
+            if pacing == "tight":
+                from scripts.pacing import compose_tight
+                scene_durations, pacing_details = compose_tight(fragments, raw)
+            else:
+                compose_timeline(fragments, durations, raw)
             transcript = "\n".join(t.strip() for t in text)
             model_id = cloner.model_id if cloner is not None else selected
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -231,6 +239,10 @@ def generate(text, output, *, provider, language="en", voice=None, durations=Non
                                     if voice_conversion else None),
     }
     if durations is not None:
+        metadata["pacing"] = pacing
+        if scene_durations is not None:
+            metadata["scene_durations"] = scene_durations
+            metadata["pacing_details"] = pacing_details
         metadata["scene_count"] = len(text)
         metadata["script_sha256"] = script_hash([{"narration": s} for s in text])
     output.with_suffix(".voice.json").write_text(
