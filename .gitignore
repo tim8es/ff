@@ -18,3 +18,11 @@
 /__pycache__/
 .pytest_cache/
 .venv/
+
+# Never store biometric source material, decryption keys or scratch packages here
+/.private_voice/*
+!/.private_voice/README.md
+/**/FF_VOICE_BUNDLE_KEY*
+/*.ref.txt
+/ff_voice_processed/
+/ff_voice_reference/
