@@ -24,7 +24,7 @@ OUTPUT_NAMES = (
 
 
 def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
-          encrypted_reference=None):
+          encrypted_reference=None, external_voice=None, external_receipt=None):
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     if demo:
@@ -42,7 +42,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     from scripts.story_arc import validate_story_arc
     story_contract = validate_story_arc(manifest)
     tts = manifest.get("tts", {})
-    if voice_mode == "owner":
+    if voice_mode in ("owner", "external"):
         if tts.get("profile") != "ff_owner":
             raise ValueError("Owner mode requires manifest tts.profile=ff_owner")
         if tts.get("provider") not in (None, "qwen3_clone"):
@@ -55,7 +55,12 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     language = manifest.get("language")
     audio = workspace / "voice.wav"
 
-    if voice_mode == "owner":
+    if voice_mode == "external":
+        if not external_voice or not external_receipt or encrypted_reference:
+            raise ValueError("External owner voice requires WAV and verified receipt only")
+        from scripts.external_voice import accept_owner_voice
+        receipt = accept_owner_voice(manifest, external_voice, external_receipt, workspace)
+    elif voice_mode == "owner":
         if not encrypted_reference:
             raise ValueError("Owner mode requires encrypted voice reference bundle")
         from scripts.voice_secure import unpack_reference
@@ -174,7 +179,9 @@ def main():
     group = build_cmd.add_mutually_exclusive_group(required=True)
     group.add_argument("--bundle", type=Path)
     group.add_argument("--demo", action="store_true")
-    build_cmd.add_argument("--voice-mode", choices=("piper", "owner"), default="piper")
+    build_cmd.add_argument("--voice-mode", choices=("piper", "owner", "external"), default="piper")
+    build_cmd.add_argument("--external-voice", type=Path)
+    build_cmd.add_argument("--external-receipt", type=Path)
     build_cmd.add_argument("--encrypted-reference", type=Path)
     seal = commands.add_parser("seal")
     seal.add_argument("--workspace", type=Path, required=True)
@@ -186,7 +193,9 @@ def main():
     if args.command == "build":
         print(json.dumps(build(workspace=args.workspace, bundle=args.bundle,
                                demo=args.demo, voice_mode=args.voice_mode,
-                               encrypted_reference=args.encrypted_reference),
+                               encrypted_reference=args.encrypted_reference,
+                               external_voice=args.external_voice,
+                               external_receipt=args.external_receipt),
                          indent=2, ensure_ascii=False))
     elif args.command == "seal":
         seal_private(args.workspace, args.output)
