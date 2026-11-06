@@ -1,101 +1,83 @@
-# FF: MP4 rendering in GitHub Actions
+# FF — video preview and private owner voice (November 2026)
 
-`production.yml` is the **compute backend**, not a publisher. It runs the
-existing FF voice generator, Pillow/FFmpeg renderer and technical QA on an
-ephemeral Ubuntu CPU runner. The resulting artifact is always
-`REVIEW-REQUIRED`. The assistant must inspect and listen to the MP4 and run
-the normal semantic QA release gate before presenting it as a finished episode.
+## Two distinct paths, no other channel
 
-## Staging original episode materials
+**Public draft/demo:** `.github/workflows/production.yml` in `tim8es/ff`
+creates only synthetic or Piper TTS previews without any personal voice
+reference. Valid inputs: `mode=demo` or `mode=staged` with a public FF
+`staging/episode.zip.b64` on a trusted staging ref. An Actions artifact is
+a **review-required** public draft, never a publication approval.
 
-1. Build the fact-checked episode manifest in `work/manifest.json`. Every
-   scene needs its matching `image` and `visual_asset` filename, full
-   narration, `onscreen_text`, `visual_intent`, `motion_cue`, and duration.
-   Use 5–8 scenes, 15–25 seconds total, 2 independent verified sources.
-2. Create the original generated imagery in `work/assets/` (at least 3
-   genuinely different PNG/JPEG/WebP files). No generated narration, voice
-   reference or API token should go in the staging package.
-3. Build a text-only package:
+**Private `ff_owner` MP4:** The current route uses
+`tim8es/voice-engine` (private) with Qwen3-TTS 1.7B Base; the generic
+`tim8es/task-runner/.github/workflows/universal.yml` receives only a
+random 32-hex job ID. The private worker fetches a persistent encrypted owner
+reference and staged encrypted FF scene text/images, generates voice per scene,
+verifies its receipt, renders through the pinned PUBLIC FF compositor in
+`--voice-mode external`, and uploads only encrypted results to
+`ff-video-<job_id>` in a **private Voice Engine Release**.
 
-   ```bash
-   python -m scripts.episode_package --pack work --output staging/episode.zip.b64
-   ```
+Authoritative step-by-step staging, secrets and recovery:
+`tim8es/voice-engine/docs/FF_UNIVERSAL_PIPELINE.md`.
+No n8n/channel B renderer is part of this flow.
 
-4. Create a temporary Git branch from `main` (for example
-   `staging/episode-001`) and commit **only**
-   `staging/episode.zip.b64` for public-voice drafts. The package extractor
-   validates all entries and rejects path traversal, missing art, duplicate
-   image files, unexpected files and oversized packages.
+## Prepare and stage FF visuals
 
-5. In **Actions → FF Actions video preview → Run workflow**, select `main`.
-   Set `mode=staged` and `episode_ref=staging/episode-001`.
+An FF episode consists of one `manifest.json` and at least three distinct
+original visuals under `assets/`. Every scene needs narration, explicit
+safe text, meaningful motion, references/evidence and an image ID that
+matches `visual_asset`. Sources must be independently verifiable.
+The audience-facing video is 15–25s and has 5–8 scenes.
 
-6. Download the `ff-public-video-REVIEW-REQUIRED` Actions artifact. It
-   includes `final.mp4`, `qa.json`, `handoff.json`, the manifest and audio
-   provenance. FF's connected GitHub tool can bring this ZIP back into the
-   chat, and the ZIP can be extracted into `/mnt/data` for inspection.
-
-## Owner voice (private mode)
-
-When a manifest uses `"tts":{"profile":"ff_owner"}`, select **mode=owner**
-rather than `staged`. Add **only the encrypted voice bundle**
-`.private_voice/reference.bundle` or its Base64-encoded form
-`.private_voice/reference.bundle.b64` to the *same temporary branch* before
-running Actions. The repo secret `FF_VOICE_BUNDLE_KEY` must already exist.
-
-Owner mode: decrypts the authorized reference inside the runner, runs Qwen3
-1.7B Base on CPU, renders the video, performs technical QA, then encrypts
-**the MP4, audio, receipt, manifest and QA report** before artifact upload.
-The runner deletes plaintext output even when a job fails. The artifact
-`ff-owner-MP4-REVIEW-REQUIRED` contains only `encrypted_video.bundle`:
+For public **draft** generation only:
 
 ```bash
-export FF_VOICE_BUNDLE_KEY='(your private secret from trusted key storage)'
-python -m scripts.production unseal \
-  --bundle encrypted_video.bundle --dest /private/ff-review
-unset FF_VOICE_BUNDLE_KEY
+python -m scripts.episode_package --pack /private/ff_episode \
+  --output staging/episode.zip.b64
 ```
 
-**Never** commit plaintext personal audio, the key or cloned-audio outputs to
-a public Git branch. The staging branch can be reset/deleted after successful
-download, although Git may retain unreachable encrypted objects for a while.
-The encryption protects public artifact access, not against a compromised
-runner or privileged repository operators.
+The `staged` Actions workflow accepts the public staging ref, uses Piper
+for a technical preview, and includes a `qa.json` report. Do not stage
+unreleased personal audio, private reference transcripts, keys, or
+voice-engine results in this public branch.
 
-## Demo vs release
+For PRIVATE owner voice, make the episode staging package in a trusted
+workspace, then encrypt it in the private voice-engine job via
+`scripts.ff_prepare_job`. New narration is encrypted, the owner reference
+stays reusable, and no new audio upload is required.
 
-Run `mode=demo` for an internal sample with five distinct synthetic geometric
-test images and short English Piper neural narration. These images, text and
-placeholder source URLs are deliberately **not** an actual FF release.
+## Audio/MP4 integrity gate
 
-`scripts.production build` always invokes
-`scripts.qa.validate(..., technical_only=True)`. This checks script and
-voice hashes, duration, frames, sound and codecs without falsely claiming
-factual accuracy or artistic quality. It records:
+For private owner-voice input recovered in a trusted environment:
 
-```json
-{"status":"TECHNICAL_PREVIEW_REVIEW_REQUIRED","release_ready":false}
+```bash
+python -m scripts.production build --bundle /private/episode.zip.b64 \
+  --workspace /private/ff_out --voice-mode external \
+  --external-voice /private/voice.wav \
+  --external-receipt /private/voice.voice.json
 ```
 
-The assistant must then review the full output for speech clarity, source
-accuracy, meaningful motion, generated visual problems, text safe areas, hook,
-pacing and ending. Only after review can the standard `scripts.qa` full
-release gate run with real reviewer-supplied `review.json`. No automatic
-`true` review fields are generated.
+The `external` contract rejects a wrong model/profile, changed narration,
+inconsistent SHA-256, scene timings, unrelated language or a non-PCM16 WAV.
+`scripts.production` renders a vertical H.264/AAC MP4 and writes
+`qa.json`, `handoff.json`. Passing technical QA **does not** bypass
+the seven semantic/audible/visual review checks in `AGENTS.md`.
 
-## Operational limits
+The old public `mode=owner`, `FF_VOICE_BUNDLE_KEY` and
+`.private_voice/reference.bundle` workflow is **RETIRED** for personal
+voice generation. The historical code/commit history may still exist,
+but never reuse the formerly exposed key. Never send a personal voice WAV or
+plaintext MP4 to public Actions artifacts.
 
-The public GitHub connector can stage a **text** Base64 ZIP, but it cannot
-yet reliably call `workflow_dispatch` itself in Chat mode. Starting the
-production workflow from its Actions UI is still a manual step. This
-limitation is not disguised as a fully hands-off chat pipeline.
+## Operational limitations
 
-The Actions renderer composes **supplied** imagery: it does not generate
-pictures or independently research facts, and does not add a music soundtrack
-unless one has been deliberately supplied and mixed. Keep the episode assets
-and semantic QA owned by the chat agent. The production workflow is a
-reproducible, minimal CPU compute and artifact handoff stage, not a complete
-creative replacement.
+The private `FF_JOB_FERNET_KEY` must decrypt the retained owner reference.
+If the prior key was lost or compromised, the voice owner needs to provide
+one fresh reference recording to create a new encrypted profile; inventing a
+new key cannot decrypt old ciphertext. The current ChatGPT GitHub connector
+cannot read Actions Secrets or dispatch every workflow; passing synthetic
+unit tests does not certify a private end-to-end render.
 
-
-Compact encrypted Opus references are also accepted: the trusted runner decrypts and decodes Opus to temporary PCM WAV before running Qwen3 1.7B. The ciphertext is produced with the same authenticated Fernet key and does **not** expose the sample or transcript in public Git. The full sound output never leaves the runner as plaintext.
+To deliver a completed file in chat, decrypt the private MP4 only in a
+trusted environment, view and listen to the full video and check all QA
+requirements. Do not claim a successful user-ready MP4 before doing this.
