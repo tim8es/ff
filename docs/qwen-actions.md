@@ -1,5 +1,18 @@
 # FF: Qwen3 0.6B and 1.7B on GitHub Actions
 
+> **DEPRECATED — archival model-benchmark notes only (Nov 2026).**
+> The old public FF owner workflow and `FF_VOICE_BUNDLE_KEY` must **not**
+> be used for new personal voice recordings or video. The key was previously
+> exposed and the old owner mode has been retired from
+> `.github/workflows/production.yml`. The current owner profile is stored
+> once as authenticated ciphertext in PRIVATE `tim8es/voice-engine`, and
+> FF video is produced with its checked external Qwen WAV/receipt through
+> the generic `tim8es/task-runner/universal.yml`. See
+> [FF owner-voice production](production-actions.md).
+> Historical instructions below are retained only to explain past tests.
+> Do not follow their key-generation/staging commands.
+
+
 The [Qwen Base comparison workflow](../.github/workflows/qwen-base-compare.yml) runs **inside the public FF repository**, with CPU jobs for Qwen3 Base 0.6B and/or 1.7B (default: **1.7B only**; select **both** to compare). Each produces identical RU and EN short narration. No API key, GPU, paid TTS, or third-party publishing service is needed for the public demo.
 
 ## Modes
