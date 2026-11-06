@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -24,7 +25,7 @@ OUTPUT_NAMES = (
 
 
 def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
-          encrypted_reference=None):
+          encrypted_reference=None, engine_wav=None, engine_receipt=None):
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     if demo:
@@ -42,7 +43,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     from scripts.story_arc import validate_story_arc
     story_contract = validate_story_arc(manifest)
     tts = manifest.get("tts", {})
-    if voice_mode == "owner":
+    if voice_mode in ("owner", "engine"):
         if tts.get("profile") != "ff_owner":
             raise ValueError("Owner mode requires manifest tts.profile=ff_owner")
         if tts.get("provider") not in (None, "qwen3_clone"):
@@ -55,7 +56,28 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     language = manifest.get("language")
     audio = workspace / "voice.wav"
 
-    if voice_mode == "owner":
+    if voice_mode == "engine":
+        if not engine_wav or not engine_receipt:
+            raise ValueError("Voice Engine audio + receipt are required")
+        receipt = json.loads(Path(engine_receipt).read_text(encoding="utf8"))
+        from scripts.voice import script_hash
+        required = {"engine": "qwen3_clone", "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+                    "neural": True, "voice_cloned": True, "language": language,
+                    "scene_count": len(narration),
+                    "script_sha256": script_hash(manifest["scenes"])}
+        if any(receipt.get(k) != v for k,v in required.items()):
+            raise ValueError("Voice Engine model, voice or transcript mismatch")
+        wav = Path(engine_wav)
+        if not wav.is_file() or wav.is_symlink():
+            raise ValueError("Voice Engine audio unavailable")
+        if receipt.get("audio_sha256") != hashlib.sha256(wav.read_bytes()).hexdigest():
+            raise ValueError("Voice Engine audio checksum mismatch")
+        if not isinstance(receipt.get("scene_durations"), list):
+            raise ValueError("Voice Engine scene timings are required")
+        shutil.copyfile(wav,audio)
+        audio.with_suffix(".voice.json").write_text(
+            json.dumps(receipt,ensure_ascii=False,indent=2),encoding="utf8")
+    elif voice_mode == "owner":
         if not encrypted_reference:
             raise ValueError("Owner mode requires encrypted voice reference bundle")
         from scripts.voice_secure import unpack_reference
@@ -174,7 +196,9 @@ def main():
     group = build_cmd.add_mutually_exclusive_group(required=True)
     group.add_argument("--bundle", type=Path)
     group.add_argument("--demo", action="store_true")
-    build_cmd.add_argument("--voice-mode", choices=("piper", "owner"), default="piper")
+    build_cmd.add_argument("--voice-mode", choices=("piper", "owner", "engine"), default="piper")
+    build_cmd.add_argument("--engine-wav", type=Path)
+    build_cmd.add_argument("--engine-receipt", type=Path)
     build_cmd.add_argument("--encrypted-reference", type=Path)
     seal = commands.add_parser("seal")
     seal.add_argument("--workspace", type=Path, required=True)
@@ -186,7 +210,9 @@ def main():
     if args.command == "build":
         print(json.dumps(build(workspace=args.workspace, bundle=args.bundle,
                                demo=args.demo, voice_mode=args.voice_mode,
-                               encrypted_reference=args.encrypted_reference),
+                               encrypted_reference=args.encrypted_reference,
+                               engine_wav=args.engine_wav,
+                               engine_receipt=args.engine_receipt),
                          indent=2, ensure_ascii=False))
     elif args.command == "seal":
         seal_private(args.workspace, args.output)
