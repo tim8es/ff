@@ -7,12 +7,22 @@ on:
       - "tests/**"
       - "examples/**"
       - ".github/workflows/tests.yml"
+      - ".github/workflows/production.yml"
+      - "AGENTS.md"
+      - "docs/production-actions.md"
+      - "docs/qwen-actions.md"
+      - "README.md"
   pull_request:
     paths:
       - "scripts/**"
       - "tests/**"
       - "examples/**"
       - ".github/workflows/tests.yml"
+      - ".github/workflows/production.yml"
+      - "AGENTS.md"
+      - "docs/production-actions.md"
+      - "docs/qwen-actions.md"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
