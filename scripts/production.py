@@ -42,7 +42,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
     from scripts.story_arc import validate_story_arc
     story_contract = validate_story_arc(manifest)
     tts = manifest.get("tts", {})
-    if voice_mode in ("owner", "external"):
+    if voice_mode == "external":
         if tts.get("profile") != "ff_owner":
             raise ValueError("Owner mode requires manifest tts.profile=ff_owner")
         if tts.get("provider") not in (None, "qwen3_clone"):
@@ -60,34 +60,6 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
             raise ValueError("External owner voice requires WAV and verified receipt only")
         from scripts.external_voice import accept_owner_voice
         receipt = accept_owner_voice(manifest, external_voice, external_receipt, workspace)
-    elif voice_mode == "owner":
-        if not encrypted_reference:
-            raise ValueError("Owner mode requires encrypted voice reference bundle")
-        from scripts.voice_secure import unpack_reference
-        unpack_reference(encrypted_reference, workspace / "_private_reference")
-        private = workspace / "_private_reference"
-        # Voice stays in ephemeral storage. Keep conservative cleaning as the
-        # default; explicit fan presets are chosen only after comparison.
-        from scripts.audio_improve import prepare_recording
-        cleanup = tts.get("reference_preprocessing", "conservative")
-        if cleanup not in ("none", "conservative", "fan", "fan_strong"):
-            raise ValueError("Unknown private voice reference preprocessing preset")
-        clean_ref = private / "reference.wav"
-        if cleanup != "none":
-            clean_ref = private / "reference_prepared.wav"
-            prepare_recording(
-                private / "reference.wav", clean_ref,
-                strength=0.55, preset=cleanup,
-                fan_notch_hz=tts.get("fan_notch_hz"),
-                fan_strength=tts.get("fan_strength", .75))
-        transcript = (private / "reference.txt").read_text(encoding="utf8")
-        from scripts.voice_profiles import resolve_profile
-        profile = resolve_profile("ff_owner", language=language)
-        receipt = generate(
-            narration, audio, provider=profile["provider"],
-            model_size=profile["model_size"], language=language,
-            durations=durations, reference=clean_ref,
-            reference_text=transcript, adaptive_pacing=True)
     elif voice_mode == "piper":
         # Public smoke/draft only: no implicit impersonation of the FF owner.
         receipt = generate(
@@ -127,8 +99,7 @@ def build(*, workspace, bundle=None, demo=False, voice_mode="piper",
         "voice_sha256": receipt["audio_sha256"],
         "duration": qa["duration"],
         "qa_passed_technical": True,
-        "voice_reference_preparation": ("conservative spectral cleaning"
-                                        if voice_mode == "owner" else None),
+        "voice_reference_preparation": None,  # handled in private Voice Engine
         "scene_pacing": "adaptive_speech_duration_70_120ms",
         "story_structure": story_contract,
         "required_review": (
@@ -179,10 +150,9 @@ def main():
     group = build_cmd.add_mutually_exclusive_group(required=True)
     group.add_argument("--bundle", type=Path)
     group.add_argument("--demo", action="store_true")
-    build_cmd.add_argument("--voice-mode", choices=("piper", "owner", "external"), default="piper")
+    build_cmd.add_argument("--voice-mode", choices=("piper", "external"), default="piper")
     build_cmd.add_argument("--external-voice", type=Path)
     build_cmd.add_argument("--external-receipt", type=Path)
-    build_cmd.add_argument("--encrypted-reference", type=Path)
     seal = commands.add_parser("seal")
     seal.add_argument("--workspace", type=Path, required=True)
     seal.add_argument("--output", type=Path, required=True)
@@ -193,7 +163,6 @@ def main():
     if args.command == "build":
         print(json.dumps(build(workspace=args.workspace, bundle=args.bundle,
                                demo=args.demo, voice_mode=args.voice_mode,
-                               encrypted_reference=args.encrypted_reference,
                                external_voice=args.external_voice,
                                external_receipt=args.external_receipt),
                          indent=2, ensure_ascii=False))
