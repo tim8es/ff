@@ -7,7 +7,7 @@ on:
         type: choice
         required: true
         default: demo
-        options: [demo, private]
+        options: [demo]
       model_size:
         description: "1.7B (FF default), 0.6B, or both for benchmarking"
         type: choice
@@ -19,7 +19,8 @@ permissions:
 
 jobs:
   compare:
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    # Private mode is retired; this historical workflow may only run synthetic demo speech.
+    if: (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'demo')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
