@@ -32,13 +32,13 @@ Required `review.json` booleans: `speech_understandable`, `facts_verified`, `mot
 
 The example uses an English voice, so set `language` to `en` and write **all** narration/captions in English. For Russian use a working `ru-RU-...Neural` voice only if the live probe confirms it. On 30 Oct 2026 the hosted smoke test found both Russian Edge voices unavailable but the English one working. Edge TTS is unofficial and online; it needs network access, may change without notice, and must never silently fall back to eSpeak. Equivalent independently evaluated neural voices can be used with a matching provenance receipt. GitHub does not automatically launch video production from a chat message.
 
-For the default FF owner voice, use `"tts": {"profile": "ff_owner"}` in the manifest (Qwen3 1.7B, RU/EN). The voice recording and transcript remain private and must be supplied through encrypted Actions input or a trusted environment; see [voice setup](docs/qwen-actions.md).
+For the default FF owner voice, use `"tts": {"profile": "ff_owner"}` in the manifest (Qwen3 1.7B, RU/EN). The reference recording is held **once** as an encrypted profile in private `tim8es/voice-engine`. New Shorts use the PRIVATE FF-only voice→MP4 pipeline and a checked external WAV/receipt; see [production setup](docs/production-actions.md). The old publicly dispatched owner reference workflow is retired.
 
 For Qwen3 0.6B vs 1.7B benchmarks on the **FF GitHub Actions** runner, see [Actions model comparison and encrypted personal voice setup](docs/qwen-actions.md). Do not upload plaintext personal voice audio into this public repository or its build artifacts.
 
 ## MP4 from GitHub Actions
 
-For an actual vertical MP4 assembled on GitHub-hosted CPU with the **FF owner voice (Qwen3-TTS 1.7B Base)**, use the [Actions MP4 preview workflow](.github/workflows/production.yml) and [staging instructions](docs/production-actions.md). Owner-voice video and narration are encrypted in public Actions artifacts. Technical previews are explicitly **not** publication-approved until semantic and visual QA is completed.
+For **PUBLIC** Piper drafts only, use [FF Actions preview](.github/workflows/production.yml). For a personal Qwen3-TTS 1.7B voice and 9:16 MP4, use the `voice-engine` private FF-only pipeline through the **generic** Task Runner. The private pipeline encrypts the resulting MP4 in a PRIVATE Voice Engine Release; the public FF Actions workflow never uploads personal voice artifacts. See [FF private production](docs/production-actions.md). Technical previews are explicitly **not** publication-approved until semantic and visual QA is completed.
 
 ## Local fallback and tests
 
